@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace = 'com.reactivewallpaper'
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = 'com.reactivewallpaper'
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = '1.0'
+    }
+
+    // A fixed, committed debug key so every CI build can be installed over the
+    // previous one. This is a personal sideload app, not a Play Store release.
+    signingConfigs {
+        debug {
+            storeFile = file('debug.keystore')
+            storePassword = 'android'
+            keyAlias = 'androiddebugkey'
+            keyPassword = 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.debug
+        }
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            signingConfig = signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+}
