@@ -25,6 +25,7 @@ final class WallpaperRenderer {
     private final float[] hsv = new float[3];
 
     private Bitmap image;
+    private LivingImage living;
     private float[] accentHues = DEFAULT_HUES;
     private float time;
     private int gradientHeight = -1;
@@ -41,8 +42,15 @@ final class WallpaperRenderer {
         if (image != null && image != bitmap) {
             image.recycle();
         }
+        if (living != null) {
+            living.release();
+            living = null;
+        }
         image = bitmap;
         accentHues = bitmap != null ? ImageStore.accentHues(bitmap) : DEFAULT_HUES;
+        if (bitmap != null) {
+            living = new LivingImage(bitmap, accentHues);
+        }
     }
 
     void release() {
@@ -56,6 +64,9 @@ final class WallpaperRenderer {
         float beat = audio.beat();
 
         drawBackground(canvas, w, h, s, bass, beat, intensity);
+        if (living != null && (s.glow || s.ambient)) {
+            living.draw(canvas, matrix, audio, s, dt, density);
+        }
 
         if (s.flash && beat > 0.01f) {
             fillPaint.setShader(null);
@@ -87,10 +98,16 @@ final class WallpaperRenderer {
         if (s.pulse) {
             zoom += 0.08f * intensity * bass + 0.03f * intensity * beat;
         }
+        if (s.ambient) {
+            // Slow sway so the picture never sits completely still.
+            zoom += 0.03f + 0.012f * (float) Math.sin(time * 0.21f);
+            dx += (float) Math.sin(time * 0.13f) * 5f * density;
+            dy += (float) Math.cos(time * 0.17f) * 5f * density;
+        }
         if (s.shake) {
             float amount = 9f * density * intensity * beat;
-            dx = (float) Math.sin(time * 61f) * amount;
-            dy = (float) Math.cos(time * 47f) * amount;
+            dx += (float) Math.sin(time * 61f) * amount;
+            dy += (float) Math.cos(time * 47f) * amount;
             // Overscan so shaking never reveals the edges.
             zoom += 0.05f * intensity;
         }

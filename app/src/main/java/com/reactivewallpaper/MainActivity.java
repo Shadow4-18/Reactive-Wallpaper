@@ -96,6 +96,10 @@ public class MainActivity extends Activity {
         bindSwitch(R.id.effect_pulse, settings.pulse, checked -> settings.pulse = checked);
         bindSwitch(R.id.effect_flash, settings.flash, checked -> settings.flash = checked);
         bindSwitch(R.id.effect_shake, settings.shake, checked -> settings.shake = checked);
+        bindSwitch(R.id.living_glow, settings.glow, checked -> settings.glow = checked);
+        bindSwitch(R.id.living_ambient, settings.ambient, checked -> settings.ambient = checked);
+        bindSeek(R.id.glow_strength, (settings.glowStrength - 0.25f) / 1.75f,
+                p -> settings.glowStrength = 0.25f + p * 1.75f);
 
         // SeekBars run 0..100 and map onto each setting's range.
         bindSeek(R.id.sensitivity, (settings.sensitivity - 0.25f) / 2.75f, p -> {

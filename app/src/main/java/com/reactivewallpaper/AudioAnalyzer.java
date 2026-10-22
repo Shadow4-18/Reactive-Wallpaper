@@ -32,6 +32,7 @@ final class AudioAnalyzer {
     private float beat;
     private float sinceBeat = 1f;
     private float level;
+    private float high;
 
     AudioAnalyzer(int bandCount) {
         setBandCount(bandCount);
@@ -126,13 +127,19 @@ final class AudioAnalyzer {
         float riseRate = Math.min(1f, dt * 28f);
         float fallRate = Math.min(1f, dt * 7f);
         float total = 0f;
+        float highTotal = 0f;
+        int highStart = (int) (n * 0.35f);
         for (int i = 0; i < n; i++) {
             float target = Math.min(1f, raw[i] / norm * sensitivity);
             float current = bands[i];
             bands[i] = current + (target - current) * (target > current ? riseRate : fallRate);
             total += bands[i];
+            if (i >= highStart) {
+                highTotal += bands[i];
+            }
         }
         level = n > 0 ? total / n : 0f;
+        high = n > highStart ? highTotal / (n - highStart) : 0f;
 
         float bassNorm = Math.min(1f, bassRaw / norm);
         float bassTarget = Math.min(1f, bassNorm * sensitivity);
@@ -162,6 +169,11 @@ final class AudioAnalyzer {
 
     float level() {
         return level;
+    }
+
+    /** Average of the mid and high bands, 0..1. */
+    float high() {
+        return high;
     }
 
     /** True when nothing is moving, so the renderer can drop its frame rate. */

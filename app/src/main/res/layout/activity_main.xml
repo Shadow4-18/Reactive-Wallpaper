@@ -48,6 +48,29 @@
 
             <TextView
                 style="@style/SectionTitle"
+                android:text="@string/section_living" />
+
+            <Switch
+                android:id="@+id/living_glow"
+                style="@style/Toggle"
+                android:text="@string/living_glow" />
+
+            <Switch
+                android:id="@+id/living_ambient"
+                style="@style/Toggle"
+                android:text="@string/living_ambient" />
+
+            <TextView
+                style="@style/Label"
+                android:text="@string/glow_strength" />
+
+            <SeekBar
+                android:id="@+id/glow_strength"
+                android:layout_width="match_parent"
+                android:layout_height="40dp" />
+
+            <TextView
+                style="@style/SectionTitle"
                 android:text="@string/section_visualizer" />
 
             <RadioGroup

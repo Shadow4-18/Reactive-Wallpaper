@@ -8,6 +8,11 @@ music or video is playing on your phone.
 
 - **Your own image** from the gallery, center-cropped to fill the screen and
   rotated correctly for camera photos.
+- **Living image:** the glowing, colorful parts of your picture light up and
+  bloom with the music in their own colors. The image's dominant color follows
+  the bass and its second color follows the mids and highs. With **ambient
+  motion** on, the glow breathes, sparkles in the image's colors drift across
+  it, and the picture sways slowly, so it stays alive even in silence.
 - **Visualizers:** spectrum bars along the bottom, a circular ring around the
   center, a smooth wave, or none.
 - **Image effects:** pulse/zoom with the bass, flash on beats, shake on beats.

@@ -26,6 +26,12 @@ final class WallpaperSettings {
     boolean pulse = true;
     boolean flash = true;
     boolean shake = false;
+    /** The image's own glowing colors light up with the music. */
+    boolean glow = true;
+    /** Breathing glow, drifting sparkles and slow sway, even in silence. */
+    boolean ambient = true;
+    /** 0.25 .. 2 */
+    float glowStrength = 1f;
     /** 0.25 .. 3 */
     float sensitivity = 1f;
     /** 0.25 .. 2 */
@@ -53,6 +59,9 @@ final class WallpaperSettings {
         s.pulse = p.getBoolean("pulse", s.pulse);
         s.flash = p.getBoolean("flash", s.flash);
         s.shake = p.getBoolean("shake", s.shake);
+        s.glow = p.getBoolean("glow", s.glow);
+        s.ambient = p.getBoolean("ambient", s.ambient);
+        s.glowStrength = p.getFloat("glowStrength", s.glowStrength);
         s.sensitivity = p.getFloat("sensitivity", s.sensitivity);
         s.intensity = p.getFloat("intensity", s.intensity);
         s.barCount = Math.max(MIN_BARS, Math.min(MAX_BARS, p.getInt("barCount", s.barCount)));
@@ -71,6 +80,9 @@ final class WallpaperSettings {
                 .putBoolean("pulse", pulse)
                 .putBoolean("flash", flash)
                 .putBoolean("shake", shake)
+                .putBoolean("glow", glow)
+                .putBoolean("ambient", ambient)
+                .putFloat("glowStrength", glowStrength)
                 .putFloat("sensitivity", sensitivity)
                 .putFloat("intensity", intensity)
                 .putInt("barCount", barCount)

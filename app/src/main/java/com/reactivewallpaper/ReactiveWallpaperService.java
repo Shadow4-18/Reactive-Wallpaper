@@ -20,6 +20,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             implements SharedPreferences.OnSharedPreferenceChangeListener {
         private static final long FRAME_MS = 16;
         private static final long IDLE_FRAME_MS = 100;
+        private static final long AMBIENT_FRAME_MS = 33;
 
         private final Handler handler = new Handler(Looper.getMainLooper());
         private final Runnable drawRunnable = this::drawFrame;
@@ -136,7 +137,11 @@ public class ReactiveWallpaperService extends WallpaperService {
             }
 
             if (visible) {
-                handler.postDelayed(drawRunnable, analyzer.isIdle() ? IDLE_FRAME_MS : FRAME_MS);
+                long delay = FRAME_MS;
+                if (analyzer.isIdle()) {
+                    delay = settings.ambient ? AMBIENT_FRAME_MS : IDLE_FRAME_MS;
+                }
+                handler.postDelayed(drawRunnable, delay);
             }
         }
 

@@ -5,6 +5,10 @@
     <string name="choose_image">Choose image</string>
     <string name="set_wallpaper">Set as wallpaper</string>
     <string name="permission_note">Audio access is off, so the wallpaper can\'t react. Tap to allow.</string>
+    <string name="section_living">Living image</string>
+    <string name="living_glow">Image colors glow to the music</string>
+    <string name="living_ambient">Ambient motion (alive even in silence)</string>
+    <string name="glow_strength">Glow strength</string>
     <string name="section_visualizer">Visualizer</string>
     <string name="style_bars">Bars</string>
     <string name="style_circle">Circle</string>

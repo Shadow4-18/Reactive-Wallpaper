@@ -119,7 +119,7 @@ final class ImageStore {
     }
 
     /**
-     * Picks the image's two most prominent vivid hues (e.g. pink and cyan in
+     * Picks the image's two most prominent vivid hues, dominant first (e.g. pink and cyan in
      * neon art) so "auto" coloring can blend between them. When the image has
      * a single dominant hue, both entries are close to it.
      */
@@ -166,7 +166,7 @@ final class ImageStore {
             return new float[] {hueA, hueA + 40f};
         }
         float hueB = second * 10f + 5f;
-        // Order low-to-high so the blend runs the same way each time.
-        return hueA < hueB ? new float[] {hueA, hueB} : new float[] {hueB, hueA};
+        // Dominant hue first: it colors the bass end and drives the bass glow.
+        return new float[] {hueA, hueB};
     }
 }
