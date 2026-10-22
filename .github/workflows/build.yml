@@ -32,12 +32,12 @@ jobs:
         run: ./gradlew --no-daemon assembleRelease
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk ReactiveWallpaper.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Resona.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ReactiveWallpaper-apk
-          path: ReactiveWallpaper.apk
+          name: Resona-apk
+          path: Resona.apk
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
@@ -45,8 +45,8 @@ jobs:
         with:
           tag_name: ${{ inputs.version || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: Reactive Wallpaper ${{ inputs.version || github.ref_name }}
+          name: Resona ${{ inputs.version || github.ref_name }}
           body: |
-            Download **ReactiveWallpaper.apk** below on your Android phone, open it,
+            Download **Resona.apk** below on your Android phone, open it,
             and allow installing from unknown sources when asked.
-          files: ReactiveWallpaper.apk
+          files: Resona.apk

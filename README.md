@@ -1,6 +1,9 @@
-# Reactive Wallpaper
+# Resona
 
-An Android live wallpaper that turns any photo into a sound-reactive wallpaper.
+<img src="docs/icon.png" width="96" align="right" alt="Resona icon">
+
+Resona is an Android live wallpaper that brings any picture to life with your
+music.
 Pick an image, choose a visualizer, and your home and lock screen move to whatever
 music or video is playing on your phone.
 
@@ -34,14 +37,14 @@ music or video is playing on your phone.
 ## Install
 
 1. Open the repository's **Actions** tab, pick the latest successful
-   **Build APK** run, and download the `ReactiveWallpaper-apk` artifact (a zip
-   containing `ReactiveWallpaper.apk`).
+   **Build APK** run, and download the `Resona-apk` artifact (a zip
+   containing `Resona.apk`).
    - Or download it from the **Releases** page, which is easier from a phone.
      To publish a new release, run the **Build APK** workflow manually
      ("Run workflow") with a version such as `v1.1`, or push a `v*` tag.
 2. Copy the APK to your phone and open it. Allow "install unknown apps" for your
    browser or file manager when Android asks.
-3. Open **Reactive Wallpaper**, allow audio access, choose an image, adjust it,
+3. Open **Resona**, allow audio access, choose an image, adjust it,
    and tap **Set as wallpaper**.
 
 To switch from your old sound-reactive wallpaper, tap **Set as wallpaper**. It
