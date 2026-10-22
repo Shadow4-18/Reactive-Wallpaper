@@ -250,6 +250,11 @@ final class AudioAnalyzer {
         return beat;
     }
 
+    /** Capture time (uptime ms) of the most recent detected beat, ignoring the sync delay. */
+    long lastBeatTime() {
+        return lastBeatTime;
+    }
+
     float level() {
         return level;
     }

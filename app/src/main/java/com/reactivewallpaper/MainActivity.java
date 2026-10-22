@@ -1,7 +1,9 @@
 package com.reactivewallpaper;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.WallpaperInfo;
 import android.app.WallpaperManager;
 import android.content.ActivityNotFoundException;
@@ -16,6 +18,7 @@ import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -174,7 +177,12 @@ public class MainActivity extends Activity {
             applyAudioSettings();
         }, v -> Math.round(v * 100) + "%");
         label(sound, "Sync: if the wallpaper reacts before you hear the beat, add delay. "
-                + "Bluetooth usually needs 150–300 ms.");
+                + "Bluetooth usually needs 150–300 ms. Calibrate to measure it.");
+        Button calibrate = new Button(this);
+        calibrate.setText("Calibrate sync (tap along)");
+        calibrate.setOnClickListener(v -> openCalibration());
+        sound.addView(calibrate, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         routeLabel = new TextView(this);
         routeLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         routeLabel.setTextColor(getColor(R.color.accent));
@@ -259,6 +267,126 @@ public class MainActivity extends Activity {
                     ? "Playing through Bluetooth now: the Bluetooth delay is in use."
                     : "Playing through the phone speaker or wired headphones now.");
         }
+    }
+
+    // ---- Sync calibration --------------------------------------------------
+
+    @SuppressLint("ClickableViewAccessibility")
+    private void openCalibration() {
+        if (settings.source != WallpaperSettings.SOURCE_SYSTEM) {
+            Toast.makeText(this, "Not needed in microphone mode: the mic hears the sound when you do.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!AudioController.hasPermission(this)) {
+            requestAudioPermission();
+            return;
+        }
+        boolean bluetooth = route.isBluetooth();
+        String output = bluetooth ? "Bluetooth" : "phone speaker / wired";
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        TextView text = new TextView(this);
+        text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        text.setTextColor(getColor(R.color.text_primary));
+        text.setText("Measures the delay for " + output + ".\n\n"
+                + "Your music will pause and you'll hear " + BeatCalibration.TOTAL_CLICKS
+                + " clicks. Tap the big button exactly in time with each click you hear. "
+                + "The first " + BeatCalibration.WARMUP_CLICKS + " are practice.\n\n"
+                + "Turn the volume up so the clicks are easy to hear.");
+        box.addView(text);
+        TextView status = new TextView(this);
+        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        status.setTextColor(getColor(R.color.accent));
+        status.setPadding(0, dp(12), 0, dp(12));
+        box.addView(status);
+        Button pad = new Button(this);
+        pad.setText("TAP");
+        pad.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
+        pad.setEnabled(false);
+        box.addView(pad, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(180)));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Calibrate sync")
+                .setView(box)
+                .setPositiveButton("Start", null)
+                .setNegativeButton("Cancel", null)
+                .create();
+        BeatCalibration[] session = new BeatCalibration[1];
+        int[] measured = {-1};
+
+        dialog.setOnShowListener(d -> {
+            Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            positive.setOnClickListener(v -> {
+                if (measured[0] >= 0) {
+                    if (bluetooth) {
+                        settings.syncBluetoothMs = measured[0];
+                    } else {
+                        settings.syncSpeakerMs = measured[0];
+                    }
+                    settings.save(this);
+                    applyAudioSettings();
+                    buildControls();
+                    dialog.dismiss();
+                    return;
+                }
+                // Free the shared audio capture while calibrating.
+                audio.stop();
+                demo.stop();
+                session[0] = new BeatCalibration(this, new BeatCalibration.Callback() {
+                    @Override
+                    public void onProgress(int clicksPlayed, int taps) {
+                        status.setText("Click " + clicksPlayed + " of " + BeatCalibration.TOTAL_CLICKS
+                                + "   ·   taps: " + taps);
+                    }
+
+                    @Override
+                    public void onFinished(BeatCalibration.Result result) {
+                        session[0] = null;
+                        restartAudio();
+                        pad.setEnabled(false);
+                        if (result.ok) {
+                            measured[0] = result.delayMs;
+                            status.setText("Measured delay: " + result.delayMs + " ms. " + result.message);
+                            positive.setText("Use " + result.delayMs + " ms");
+                        } else {
+                            status.setText(result.message);
+                            positive.setText("Try again");
+                        }
+                        positive.setEnabled(true);
+                    }
+                });
+                if (!session[0].start()) {
+                    session[0] = null;
+                    restartAudio();
+                    status.setText("Phone audio can't be captured on this device. Try microphone mode instead.");
+                    return;
+                }
+                positive.setEnabled(false);
+                pad.setEnabled(true);
+            });
+            // Time taps from the touch itself (not the click callback) for accuracy.
+            pad.setOnTouchListener((v, event) -> {
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN && session[0] != null) {
+                    session[0].tap(event.getEventTime());
+                    v.setPressed(true);
+                } else if (event.getActionMasked() == MotionEvent.ACTION_UP
+                        || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+                    v.setPressed(false);
+                }
+                return true;
+            });
+        });
+        dialog.setOnDismissListener(d -> {
+            if (session[0] != null) {
+                session[0].cancel();
+                session[0] = null;
+                restartAudio();
+            }
+        });
+        dialog.show();
     }
 
     private void restartAudio() {
