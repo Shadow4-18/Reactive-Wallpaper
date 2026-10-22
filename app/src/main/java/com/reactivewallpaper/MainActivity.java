@@ -10,18 +10,25 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Outline;
 import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.widget.Button;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
@@ -30,7 +37,9 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -55,6 +64,8 @@ public class MainActivity extends Activity {
     private LinearLayout controls;
     private View circleOptions;
     private View hueOption;
+    private LinearLayout looksRow;
+    private final Map<String, Boolean> expandedSections = new HashMap<>();
     private boolean resumed;
 
     @Override
@@ -98,6 +109,26 @@ public class MainActivity extends Activity {
     private void buildControls() {
         controls.removeAllViews();
         WallpaperSettings s = settings;
+
+        LinearLayout looks = section("Looks", true);
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        looksRow = new LinearLayout(this);
+        looksRow.setOrientation(LinearLayout.HORIZONTAL);
+        looksRow.setPadding(0, dp(6), 0, dp(4));
+        scroll.addView(looksRow);
+        looks.addView(scroll);
+        TextView looksHint = new TextView(this);
+        looksHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        looksHint.setTextColor(getColor(R.color.text_secondary));
+        looksHint.setText("Tap to apply. Long-press your own looks to update, rename or delete them.");
+        looks.addView(looksHint);
+        Button saveLook = new Button(this);
+        saveLook.setText("Save current look");
+        saveLook.setOnClickListener(v -> saveLookDialog());
+        looks.addView(saveLook, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        refreshLooks();
 
         LinearLayout glow = section("Glow (the image's own colors)", true);
         slider(glow, "Bass glow", 0f, 3f, () -> s.bassGlow, v -> s.bassGlow = v, MainActivity::percent);
@@ -267,6 +298,183 @@ public class MainActivity extends Activity {
                     ? "Playing through Bluetooth now: the Bluetooth delay is in use."
                     : "Playing through the phone speaker or wired headphones now.");
         }
+    }
+
+    // ---- Looks (presets) ---------------------------------------------------
+
+    private void refreshLooks() {
+        looksRow.removeAllViews();
+        for (PresetStore.Preset preset : PresetStore.all(this)) {
+            looksRow.addView(lookItem(preset));
+        }
+    }
+
+    private View lookItem(PresetStore.Preset preset) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER_HORIZONTAL);
+        item.setPadding(0, 0, dp(12), 0);
+
+        ImageView thumb = new ImageView(this);
+        thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        thumb.setImageResource(R.drawable.wallpaper_thumbnail);
+        final float radius = dp(14);
+        thumb.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, Outline outline) {
+                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+            }
+        });
+        thumb.setClipToOutline(true);
+        item.addView(thumb, new LinearLayout.LayoutParams(dp(72), dp(96)));
+        if (preset.hasImage) {
+            int w = dp(72);
+            int h = dp(96);
+            executor.execute(() -> {
+                Bitmap bitmap = ImageStore.load(PresetStore.image(this, preset), w, h);
+                mainHandler.post(() -> {
+                    if (bitmap != null && !isDestroyed()) {
+                        thumb.setImageBitmap(bitmap);
+                    }
+                });
+            });
+        }
+
+        TextView name = new TextView(this);
+        name.setText(preset.name);
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        name.setTextColor(getColor(R.color.text_primary));
+        name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
+        name.setGravity(Gravity.CENTER_HORIZONTAL);
+        name.setPadding(0, dp(4), 0, 0);
+        item.addView(name, new LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        item.setOnClickListener(v -> applyLook(preset));
+        item.setOnLongClickListener(v -> {
+            lookMenu(preset);
+            return true;
+        });
+        return item;
+    }
+
+    private void applyLook(PresetStore.Preset preset) {
+        WallpaperSettings current = settings;
+        executor.execute(() -> {
+            WallpaperSettings next = PresetStore.apply(this, preset, current);
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                settings = next;
+                applyAudioSettings();
+                preview.setSettings(settings);
+                buildControls();
+                if (preset.hasImage) {
+                    loadPreviewImage();
+                }
+                Toast.makeText(this, "Applied “" + preset.name + "”", Toast.LENGTH_SHORT).show();
+            });
+        });
+    }
+
+    private void saveLookDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        EditText name = new EditText(this);
+        name.setSingleLine(true);
+        name.setHint("Name");
+        name.setText("My look " + (PresetStore.all(this).size() - 3));
+        name.selectAll();
+        box.addView(name);
+        CheckBox includeImage = new CheckBox(this);
+        includeImage.setText("Include the current image");
+        boolean hasImage = ImageStore.hasImage(this);
+        includeImage.setChecked(hasImage);
+        includeImage.setEnabled(hasImage);
+        box.addView(includeImage);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Save current look")
+                .setView(box)
+                .setPositiveButton("Save", (d, which) -> {
+                    String title = name.getText().toString().trim();
+                    String finalTitle = title.isEmpty() ? "My look" : title;
+                    WallpaperSettings current = settings;
+                    boolean withImage = includeImage.isChecked();
+                    executor.execute(() -> {
+                        PresetStore.save(this, finalTitle, current, withImage);
+                        mainHandler.post(() -> {
+                            if (!isDestroyed()) {
+                                refreshLooks();
+                                Toast.makeText(this, "Saved “" + finalTitle + "”", Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    });
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void lookMenu(PresetStore.Preset preset) {
+        if (preset.builtIn) {
+            Toast.makeText(this, "Built-in looks can't be changed. Apply it, adjust, then save your own.",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        String[] actions = {"Update with current look", "Rename", "Delete"};
+        new AlertDialog.Builder(this)
+                .setTitle(preset.name)
+                .setItems(actions, (d, which) -> {
+                    if (which == 0) {
+                        WallpaperSettings current = settings;
+                        executor.execute(() -> {
+                            PresetStore.update(this, preset, current);
+                            mainHandler.post(() -> {
+                                if (!isDestroyed()) {
+                                    refreshLooks();
+                                    Toast.makeText(this, "Updated “" + preset.name + "”", Toast.LENGTH_SHORT).show();
+                                }
+                            });
+                        });
+                    } else if (which == 1) {
+                        renameLookDialog(preset);
+                    } else {
+                        new AlertDialog.Builder(this)
+                                .setTitle("Delete “" + preset.name + "”?")
+                                .setPositiveButton("Delete", (d2, w2) -> {
+                                    PresetStore.delete(this, preset);
+                                    refreshLooks();
+                                })
+                                .setNegativeButton("Cancel", null)
+                                .show();
+                    }
+                })
+                .show();
+    }
+
+    private void renameLookDialog(PresetStore.Preset preset) {
+        EditText name = new EditText(this);
+        name.setSingleLine(true);
+        name.setText(preset.name);
+        name.selectAll();
+        LinearLayout box = new LinearLayout(this);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(name, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        new AlertDialog.Builder(this)
+                .setTitle("Rename look")
+                .setView(box)
+                .setPositiveButton("Rename", (d, which) -> {
+                    String title = name.getText().toString().trim();
+                    if (!title.isEmpty()) {
+                        PresetStore.rename(this, preset, title);
+                        refreshLooks();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     // ---- Sync calibration --------------------------------------------------
@@ -578,10 +786,14 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         Runnable refresh = () -> header.setText((body.getVisibility() == View.VISIBLE ? "▾  " : "▸  ") + title);
-        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        // Remember open/closed sections across rebuilds (e.g. after applying a look).
+        boolean open = expandedSections.getOrDefault(title, expanded);
+        body.setVisibility(open ? View.VISIBLE : View.GONE);
         refresh.run();
         header.setOnClickListener(v -> {
-            body.setVisibility(body.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            boolean nowOpen = body.getVisibility() != View.VISIBLE;
+            body.setVisibility(nowOpen ? View.VISIBLE : View.GONE);
+            expandedSections.put(title, nowOpen);
             refresh.run();
         });
         return body;

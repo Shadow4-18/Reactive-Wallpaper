@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.util.Log;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,8 +23,26 @@ final class ImageStore {
 
     private ImageStore() {}
 
-    private static File file(Context context) {
+    static File file(Context context) {
         return new File(context.getFilesDir(), FILE_NAME);
+    }
+
+    /** Copies one image file to another, via a temp file so a reader never sees half a file. */
+    static boolean copy(File from, File to) {
+        File temp = new File(to.getPath() + ".tmp");
+        try (InputStream in = new FileInputStream(from);
+             OutputStream out = new FileOutputStream(temp)) {
+            byte[] buffer = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buffer)) > 0) {
+                out.write(buffer, 0, n);
+            }
+        } catch (IOException e) {
+            Log.w(TAG, "Could not copy image", e);
+            temp.delete();
+            return false;
+        }
+        return temp.renameTo(to);
     }
 
     static boolean hasImage(Context context) {
@@ -64,7 +83,10 @@ final class ImageStore {
      * smaller than needed to cover it). Returns null if no image is stored.
      */
     static Bitmap load(Context context, int reqWidth, int reqHeight) {
-        File f = file(context);
+        return load(file(context), reqWidth, reqHeight);
+    }
+
+    static Bitmap load(File f, int reqWidth, int reqHeight) {
         if (f.length() == 0) {
             return null;
         }

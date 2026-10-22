@@ -16,6 +16,11 @@ music or video is playing on your phone.
   the bass and its second color follows the mids and highs.
 - **Idle animation:** the glow breathes, sparkles in the image's colors drift
   across it, and the picture sways slowly, so it stays alive even in silence.
+- **Looks (presets):** save the current settings, optionally with the image,
+  as a named look and switch between looks with one tap. Long-press a look to
+  update, rename or delete it. Built-in starters: Neon glow, Halo ring, Club
+  and Calm. Sync delays and the audio source belong to the phone, so looks
+  don't change them.
 - **Full control of every effect.** Each has its own slider (0 turns it off):
   - Glow: bass glow, treble glow, beat flare, halo size, coverage (how much of
     the image glows), swap colors

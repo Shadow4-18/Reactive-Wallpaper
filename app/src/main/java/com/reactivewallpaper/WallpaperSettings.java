@@ -82,12 +82,57 @@ final class WallpaperSettings {
     /** Bumped whenever a new image is chosen so running wallpapers reload it. */
     long imageVersion;
 
+    /** Where settings are read from: the app's preferences or a saved look. */
+    interface Reader {
+        float getFloat(String key, float def);
+
+        int getInt(String key, int def);
+
+        boolean getBoolean(String key, boolean def);
+
+        long getLong(String key, long def);
+    }
+
+    interface Writer {
+        void putFloat(String key, float value);
+
+        void putInt(String key, int value);
+
+        void putBoolean(String key, boolean value);
+
+        void putLong(String key, long value);
+    }
+
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
     static WallpaperSettings load(Context context) {
         SharedPreferences p = prefs(context);
+        return read(new Reader() {
+            @Override
+            public float getFloat(String key, float def) {
+                return p.getFloat(key, def);
+            }
+
+            @Override
+            public int getInt(String key, int def) {
+                return p.getInt(key, def);
+            }
+
+            @Override
+            public boolean getBoolean(String key, boolean def) {
+                return p.getBoolean(key, def);
+            }
+
+            @Override
+            public long getLong(String key, long def) {
+                return p.getLong(key, def);
+            }
+        });
+    }
+
+    static WallpaperSettings read(Reader p) {
         WallpaperSettings s = new WallpaperSettings();
 
         // Version 1.0/1.1 stored on/off switches; keep anything that was switched off, off.
@@ -135,52 +180,82 @@ final class WallpaperSettings {
     }
 
     void save(Context context) {
-        prefs(context).edit()
-                .putFloat("bassGlow", bassGlow)
-                .putFloat("highGlow", highGlow)
-                .putFloat("beatFlare", beatFlare)
-                .putFloat("bloom", bloom)
-                .putFloat("glowCoverage", glowCoverage)
-                .putBoolean("swapGlowColors", swapGlowColors)
-                .putFloat("breathe", breathe)
-                .putFloat("breatheSpeed", breatheSpeed)
-                .putFloat("sparkleAmount", sparkleAmount)
-                .putFloat("sparkleSize", sparkleSize)
-                .putFloat("sparkleSpeed", sparkleSpeed)
-                .putFloat("sparkleBrightness", sparkleBrightness)
-                .putFloat("sparkleReact", sparkleReact)
-                .putFloat("pulseAmount", pulse)
-                .putFloat("sway", sway)
-                .putFloat("swaySpeed", swaySpeed)
-                .putFloat("shakeAmount", shake)
-                .putFloat("flashAmount", flash)
-                .putInt("style", style)
-                .putFloat("vizHeight", vizHeight)
-                .putFloat("vizOpacity", vizOpacity)
-                .putInt("barCount", barCount)
-                .putFloat("circleY", circleY)
-                .putFloat("circleSize", circleSize)
-                .putInt("colorMode", colorMode)
-                .putFloat("hue", hue)
-                .putFloat("sensitivity", sensitivity)
-                .putFloat("smoothing", smoothing)
-                .putFloat("beatSensitivity", beatSensitivity)
-                .putInt("syncSpeakerMs", syncSpeakerMs)
-                .putInt("syncBluetoothMs", syncBluetoothMs)
-                .putInt("source", source)
-                .putLong("imageVersion", imageVersion)
-                .apply();
+        SharedPreferences.Editor editor = prefs(context).edit();
+        write(new Writer() {
+            @Override
+            public void putFloat(String key, float value) {
+                editor.putFloat(key, value);
+            }
+
+            @Override
+            public void putInt(String key, int value) {
+                editor.putInt(key, value);
+            }
+
+            @Override
+            public void putBoolean(String key, boolean value) {
+                editor.putBoolean(key, value);
+            }
+
+            @Override
+            public void putLong(String key, long value) {
+                editor.putLong(key, value);
+            }
+        });
+        editor.apply();
+    }
+
+    void write(Writer w) {
+        w.putFloat("bassGlow", bassGlow);
+        w.putFloat("highGlow", highGlow);
+        w.putFloat("beatFlare", beatFlare);
+        w.putFloat("bloom", bloom);
+        w.putFloat("glowCoverage", glowCoverage);
+        w.putBoolean("swapGlowColors", swapGlowColors);
+        w.putFloat("breathe", breathe);
+        w.putFloat("breatheSpeed", breatheSpeed);
+        w.putFloat("sparkleAmount", sparkleAmount);
+        w.putFloat("sparkleSize", sparkleSize);
+        w.putFloat("sparkleSpeed", sparkleSpeed);
+        w.putFloat("sparkleBrightness", sparkleBrightness);
+        w.putFloat("sparkleReact", sparkleReact);
+        w.putFloat("pulseAmount", pulse);
+        w.putFloat("sway", sway);
+        w.putFloat("swaySpeed", swaySpeed);
+        w.putFloat("shakeAmount", shake);
+        w.putFloat("flashAmount", flash);
+        w.putInt("style", style);
+        w.putFloat("vizHeight", vizHeight);
+        w.putFloat("vizOpacity", vizOpacity);
+        w.putInt("barCount", barCount);
+        w.putFloat("circleY", circleY);
+        w.putFloat("circleSize", circleSize);
+        w.putInt("colorMode", colorMode);
+        w.putFloat("hue", hue);
+        w.putFloat("sensitivity", sensitivity);
+        w.putFloat("smoothing", smoothing);
+        w.putFloat("beatSensitivity", beatSensitivity);
+        w.putInt("syncSpeakerMs", syncSpeakerMs);
+        w.putInt("syncBluetoothMs", syncBluetoothMs);
+        w.putInt("source", source);
+        w.putLong("imageVersion", imageVersion);
     }
 
     /** Defaults for every effect, keeping the chosen image and audio source. */
     WallpaperSettings resetEffects() {
-        WallpaperSettings fresh = new WallpaperSettings();
-        fresh.imageVersion = imageVersion;
-        fresh.source = source;
-        // Sync is a property of the phone and headphones, not of the look.
-        fresh.syncSpeakerMs = syncSpeakerMs;
-        fresh.syncBluetoothMs = syncBluetoothMs;
-        return fresh;
+        return new WallpaperSettings().keepDeviceSettingsFrom(this);
+    }
+
+    /**
+     * Copies what belongs to this phone rather than to a look: the image in use,
+     * the audio source and the sync delays (a property of the headphones).
+     */
+    WallpaperSettings keepDeviceSettingsFrom(WallpaperSettings current) {
+        imageVersion = current.imageVersion;
+        source = current.source;
+        syncSpeakerMs = current.syncSpeakerMs;
+        syncBluetoothMs = current.syncBluetoothMs;
+        return this;
     }
 
     /** Applies the audio tuning to an analyzer for the current output route. */
