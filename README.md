@@ -21,7 +21,9 @@ music or video is playing on your phone.
   - Beat effects: pulse/zoom, flash, shake
   - Visualizer overlay (bars, ring, wave or none): height, opacity, bar count,
     ring position and size, colors
-  - Audio: sensitivity, phone audio or microphone
+  - Audio: sensitivity, smoothing, beat sensitivity, phone audio or microphone
+  - Sync: separate delays for the phone speaker/wired and for Bluetooth, picked
+    automatically from where the sound is playing
 - The preview stays on screen while you adjust. **Demo beat** lets you tune
   without playing music, and there's a one-tap reset to defaults.
 - Changes apply instantly to the running wallpaper.
@@ -55,6 +57,14 @@ replaces whatever live wallpaper is active.
   plays, try turning those effects off, or switch to **Microphone**. The app
   also falls back to the microphone automatically if phone audio is
   unavailable.
+
+## Sync
+
+The app sees the audio when Android sends it to the speaker, which is earlier
+than you hear it, especially over Bluetooth (often 150–300 ms). If the
+wallpaper reacts before the beat, raise the matching **Delay** slider under
+Audio until hits line up. The app switches between the speaker and Bluetooth
+delays automatically.
 
 ## Building locally
 

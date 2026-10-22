@@ -3,10 +3,9 @@ package com.reactivewallpaper;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.SystemClock;
 import android.service.wallpaper.WallpaperService;
+import android.view.Choreographer;
 import android.view.SurfaceHolder;
 
 public class ReactiveWallpaperService extends WallpaperService {
@@ -17,16 +16,16 @@ public class ReactiveWallpaperService extends WallpaperService {
     }
 
     private final class ReactiveEngine extends Engine
-            implements SharedPreferences.OnSharedPreferenceChangeListener {
-        private static final long FRAME_MS = 16;
+            implements SharedPreferences.OnSharedPreferenceChangeListener, Choreographer.FrameCallback {
         private static final long IDLE_FRAME_MS = 100;
         private static final long AMBIENT_FRAME_MS = 33;
 
-        private final Handler handler = new Handler(Looper.getMainLooper());
-        private final Runnable drawRunnable = this::drawFrame;
+        private Choreographer choreographer;
+        private boolean frameScheduled;
         private WallpaperSettings settings;
         private AudioAnalyzer analyzer;
         private AudioController audio;
+        private OutputRoute route;
         private WallpaperRenderer renderer;
         private boolean visible;
         private int width;
@@ -38,9 +37,12 @@ public class ReactiveWallpaperService extends WallpaperService {
         @Override
         public void onCreate(SurfaceHolder surfaceHolder) {
             super.onCreate(surfaceHolder);
+            choreographer = Choreographer.getInstance();
             settings = WallpaperSettings.load(ReactiveWallpaperService.this);
             analyzer = new AudioAnalyzer(settings.barCount);
-            analyzer.setSensitivity(settings.sensitivity);
+            route = new OutputRoute(ReactiveWallpaperService.this,
+                    bluetooth -> settings.applyTo(analyzer, bluetooth, true));
+            settings.applyTo(analyzer, route.isBluetooth(), true);
             audio = new AudioController(ReactiveWallpaperService.this, analyzer);
             renderer = new WallpaperRenderer(getResources().getDisplayMetrics().density);
             WallpaperSettings.prefs(ReactiveWallpaperService.this)
@@ -52,8 +54,9 @@ public class ReactiveWallpaperService extends WallpaperService {
             super.onDestroy();
             WallpaperSettings.prefs(ReactiveWallpaperService.this)
                     .unregisterOnSharedPreferenceChangeListener(this);
-            handler.removeCallbacks(drawRunnable);
+            stopFrames();
             audio.stop();
+            route.stop();
             renderer.release();
         }
 
@@ -74,32 +77,35 @@ public class ReactiveWallpaperService extends WallpaperService {
         public void onSurfaceDestroyed(SurfaceHolder holder) {
             super.onSurfaceDestroyed(holder);
             visible = false;
-            handler.removeCallbacks(drawRunnable);
+            stopFrames();
             audio.stop();
+            route.stop();
         }
 
         @Override
         public void onVisibilityChanged(boolean isVisible) {
             visible = isVisible;
             if (isVisible) {
+                route.start();
+                settings.applyTo(analyzer, route.isBluetooth(), true);
                 audio.start(settings.source);
                 lastFrame = 0;
-                drawFrame();
+                scheduleFrame(0);
             } else {
-                handler.removeCallbacks(drawRunnable);
+                stopFrames();
                 audio.stop();
+                route.stop();
             }
         }
 
         @Override
         public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
             settings = WallpaperSettings.load(ReactiveWallpaperService.this);
-            analyzer.setBandCount(settings.barCount);
-            analyzer.setSensitivity(settings.sensitivity);
+            settings.applyTo(analyzer, route.isBluetooth(), true);
             loadImageIfNeeded();
             if (visible) {
                 audio.start(settings.source);
-                drawFrame();
+                scheduleFrame(0);
             }
         }
 
@@ -112,8 +118,36 @@ public class ReactiveWallpaperService extends WallpaperService {
             loadedImageVersion = settings.imageVersion;
         }
 
+        // Frames are driven by the display's vsync so motion stays even and on time.
+        private void scheduleFrame(long delayMs) {
+            if (frameScheduled) {
+                return;
+            }
+            frameScheduled = true;
+            choreographer.postFrameCallbackDelayed(this, delayMs);
+        }
+
+        private void stopFrames() {
+            choreographer.removeFrameCallback(this);
+            frameScheduled = false;
+        }
+
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            frameScheduled = false;
+            if (!visible) {
+                return;
+            }
+            drawFrame();
+            long delay = 0;
+            if (analyzer.isIdle()) {
+                boolean animated = settings.breathe > 0f || settings.sparkleAmount > 0f || settings.sway > 0f;
+                delay = animated ? AMBIENT_FRAME_MS : IDLE_FRAME_MS;
+            }
+            scheduleFrame(delay);
+        }
+
         private void drawFrame() {
-            handler.removeCallbacks(drawRunnable);
             long now = SystemClock.uptimeMillis();
             float dt = lastFrame == 0 ? 1f / 60f : Math.min(0.1f, (now - lastFrame) / 1000f);
             lastFrame = now;
@@ -134,15 +168,6 @@ public class ReactiveWallpaperService extends WallpaperService {
                         // Surface went away mid-frame.
                     }
                 }
-            }
-
-            if (visible) {
-                long delay = FRAME_MS;
-                if (analyzer.isIdle()) {
-                    boolean animated = settings.breathe > 0f || settings.sparkleAmount > 0f || settings.sway > 0f;
-                    delay = animated ? AMBIENT_FRAME_MS : IDLE_FRAME_MS;
-                }
-                handler.postDelayed(drawRunnable, delay);
             }
         }
 

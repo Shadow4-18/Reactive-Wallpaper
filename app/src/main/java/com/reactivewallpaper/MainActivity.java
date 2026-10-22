@@ -44,6 +44,8 @@ public class MainActivity extends Activity {
     private AudioAnalyzer analyzer;
     private AudioController audio;
     private DemoAudioInput demo;
+    private OutputRoute route;
+    private TextView routeLabel;
     private boolean demoOn;
     private PreviewView preview;
     private TextView permissionNote;
@@ -59,7 +61,8 @@ public class MainActivity extends Activity {
 
         settings = WallpaperSettings.load(this);
         analyzer = new AudioAnalyzer(settings.barCount);
-        analyzer.setSensitivity(settings.sensitivity);
+        route = new OutputRoute(this, bluetooth -> applyAudioSettings());
+        applyAudioSettings();
         audio = new AudioController(this, analyzer);
         demo = new DemoAudioInput(analyzer);
         renderer = new WallpaperRenderer(getResources().getDisplayMetrics().density);
@@ -138,7 +141,7 @@ public class MainActivity extends Activity {
         slider(viz, "Bar count", WallpaperSettings.MIN_BARS, WallpaperSettings.MAX_BARS,
                 () -> s.barCount, v -> {
                     s.barCount = Math.round(v);
-                    analyzer.setBandCount(s.barCount);
+                    applyAudioSettings();
                 }, v -> String.valueOf(Math.round(v)));
         LinearLayout circle = group(viz);
         slider(circle, "Ring position (up / down)", 0.2f, 0.8f, () -> s.circleY, v -> s.circleY = v,
@@ -160,17 +163,42 @@ public class MainActivity extends Activity {
         LinearLayout sound = section("Audio", false);
         slider(sound, "Sensitivity", 0.25f, 3f, () -> s.sensitivity, v -> {
             s.sensitivity = v;
-            analyzer.setSensitivity(v);
+            applyAudioSettings();
         }, MainActivity::percent);
+        slider(sound, "Smoothing (snappy ↔ smooth)", 0f, 1f, () -> s.smoothing, v -> {
+            s.smoothing = v;
+            applyAudioSettings();
+        }, v -> Math.round(v * 100) + "%");
+        slider(sound, "Beat sensitivity", 0f, 1f, () -> s.beatSensitivity, v -> {
+            s.beatSensitivity = v;
+            applyAudioSettings();
+        }, v -> Math.round(v * 100) + "%");
+        label(sound, "Sync: if the wallpaper reacts before you hear the beat, add delay. "
+                + "Bluetooth usually needs 150–300 ms.");
+        routeLabel = new TextView(this);
+        routeLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        routeLabel.setTextColor(getColor(R.color.accent));
+        sound.addView(routeLabel);
+        updateRouteLabel();
+        slider(sound, "Delay – phone speaker / wired", 0f, 600f, () -> s.syncSpeakerMs, v -> {
+            s.syncSpeakerMs = Math.round(v);
+            applyAudioSettings();
+        }, v -> Math.round(v) + " ms");
+        slider(sound, "Delay – Bluetooth", 0f, 600f, () -> s.syncBluetoothMs, v -> {
+            s.syncBluetoothMs = Math.round(v);
+            applyAudioSettings();
+        }, v -> Math.round(v) + " ms");
         label(sound, "React to");
         choice(sound, new String[] {"Phone audio", "Microphone"},
                 new int[] {WallpaperSettings.SOURCE_SYSTEM, WallpaperSettings.SOURCE_MIC},
                 s.source, v -> {
                     s.source = v;
+                    applyAudioSettings();
                     restartAudio();
                 });
         toggle(sound, "Demo beat in preview (tune without music)", () -> demoOn, v -> {
             demoOn = v;
+            applyAudioSettings();
             restartAudio();
         });
 
@@ -183,8 +211,7 @@ public class MainActivity extends Activity {
         reset.setOnClickListener(v -> {
             settings = settings.resetEffects();
             settings.save(this);
-            analyzer.setSensitivity(settings.sensitivity);
-            analyzer.setBandCount(settings.barCount);
+            applyAudioSettings();
             preview.setSettings(settings);
             buildControls();
         });
@@ -196,6 +223,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        route.start();
+        applyAudioSettings();
         updatePermissionNote();
         restartAudio();
         preview.setRunning(true);
@@ -208,6 +237,7 @@ public class MainActivity extends Activity {
         preview.setRunning(false);
         audio.stop();
         demo.stop();
+        route.stop();
     }
 
     @Override
@@ -215,6 +245,20 @@ public class MainActivity extends Activity {
         super.onDestroy();
         executor.shutdown();
         renderer.release();
+    }
+
+    private void applyAudioSettings() {
+        // The demo beat is generated in sync with the preview, so it is never delayed.
+        settings.applyTo(analyzer, route.isBluetooth(), !demoOn);
+        updateRouteLabel();
+    }
+
+    private void updateRouteLabel() {
+        if (routeLabel != null) {
+            routeLabel.setText(route.isBluetooth()
+                    ? "Playing through Bluetooth now: the Bluetooth delay is in use."
+                    : "Playing through the phone speaker or wired headphones now.");
+        }
     }
 
     private void restartAudio() {

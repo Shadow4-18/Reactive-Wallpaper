@@ -70,6 +70,13 @@ final class WallpaperSettings {
     // Audio.
     /** 0.25 .. 3 */
     float sensitivity = 1f;
+    /** 0 = snappy .. 1 = smooth */
+    float smoothing = 0.4f;
+    /** 0 = only strong hits .. 1 = nearly every bass hit */
+    float beatSensitivity = 0.5f;
+    /** How long to hold the visuals back so they match what is heard, in ms. */
+    int syncSpeakerMs = 60;
+    int syncBluetoothMs = 220;
     int source = SOURCE_SYSTEM;
 
     /** Bumped whenever a new image is chosen so running wallpapers reload it. */
@@ -118,6 +125,10 @@ final class WallpaperSettings {
         s.hue = p.getFloat("hue", s.hue);
 
         s.sensitivity = p.getFloat("sensitivity", s.sensitivity);
+        s.smoothing = p.getFloat("smoothing", s.smoothing);
+        s.beatSensitivity = p.getFloat("beatSensitivity", s.beatSensitivity);
+        s.syncSpeakerMs = p.getInt("syncSpeakerMs", s.syncSpeakerMs);
+        s.syncBluetoothMs = p.getInt("syncBluetoothMs", s.syncBluetoothMs);
         s.source = p.getInt("source", s.source);
         s.imageVersion = p.getLong("imageVersion", s.imageVersion);
         return s;
@@ -152,6 +163,10 @@ final class WallpaperSettings {
                 .putInt("colorMode", colorMode)
                 .putFloat("hue", hue)
                 .putFloat("sensitivity", sensitivity)
+                .putFloat("smoothing", smoothing)
+                .putFloat("beatSensitivity", beatSensitivity)
+                .putInt("syncSpeakerMs", syncSpeakerMs)
+                .putInt("syncBluetoothMs", syncBluetoothMs)
                 .putInt("source", source)
                 .putLong("imageVersion", imageVersion)
                 .apply();
@@ -162,6 +177,19 @@ final class WallpaperSettings {
         WallpaperSettings fresh = new WallpaperSettings();
         fresh.imageVersion = imageVersion;
         fresh.source = source;
+        // Sync is a property of the phone and headphones, not of the look.
+        fresh.syncSpeakerMs = syncSpeakerMs;
+        fresh.syncBluetoothMs = syncBluetoothMs;
         return fresh;
+    }
+
+    /** Applies the audio tuning to an analyzer for the current output route. */
+    void applyTo(AudioAnalyzer analyzer, boolean bluetooth, boolean delayed) {
+        analyzer.setBandCount(barCount);
+        analyzer.setSensitivity(sensitivity);
+        analyzer.setSmoothing(smoothing);
+        analyzer.setBeatSensitivity(beatSensitivity);
+        // The microphone already hears the sound late, so it never needs holding back.
+        analyzer.setDelayMs(delayed && source == SOURCE_SYSTEM ? (bluetooth ? syncBluetoothMs : syncSpeakerMs) : 0);
     }
 }
