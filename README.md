@@ -23,8 +23,9 @@ music or video is playing on your phone.
 1. Open the repository's **Actions** tab, pick the latest successful
    **Build APK** run, and download the `ReactiveWallpaper-apk` artifact (a zip
    containing `ReactiveWallpaper.apk`).
-   - Or push a tag such as `v1.0`. The workflow then attaches the APK to a
-     GitHub Release, which is easier to download straight from your phone.
+   - Or download it from the **Releases** page, which is easier from a phone.
+     To publish a new release, run the **Build APK** workflow manually
+     ("Run workflow") with a version such as `v1.1`, or push a `v*` tag.
 2. Copy the APK to your phone and open it. Allow "install unknown apps" for your
    browser or file manager when Android asks.
 3. Open **Reactive Wallpaper**, allow audio access, choose an image, adjust it,
