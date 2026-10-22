@@ -6,247 +6,66 @@
     android:background="@color/background"
     android:orientation="vertical">
 
+    <!-- The preview stays put while the controls below scroll. -->
+    <com.reactivewallpaper.PreviewView
+        android:id="@+id/preview"
+        android:layout_width="160dp"
+        android:layout_height="320dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="8dp"
+        android:elevation="6dp" />
+
+    <TextView
+        android:id="@+id/permission_note"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="@color/surface"
+        android:padding="12dp"
+        android:text="@string/permission_note"
+        android:textColor="@color/accent"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
         <LinearLayout
+            android:id="@+id/controls"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingStart="20dp"
-            android:paddingTop="16dp"
             android:paddingEnd="20dp"
-            android:paddingBottom="16dp">
-
-            <com.reactivewallpaper.PreviewView
-                android:id="@+id/preview"
-                android:layout_width="200dp"
-                android:layout_height="400dp"
-                android:layout_gravity="center_horizontal"
-                android:elevation="6dp" />
-
-            <TextView
-                android:id="@+id/permission_note"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:background="@color/surface"
-                android:padding="12dp"
-                android:text="@string/permission_note"
-                android:textColor="@color/accent"
-                android:textSize="14sp"
-                android:visibility="gone" />
-
-            <Button
-                android:id="@+id/choose_image"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="@string/choose_image" />
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="@string/section_living" />
-
-            <Switch
-                android:id="@+id/living_glow"
-                style="@style/Toggle"
-                android:text="@string/living_glow" />
-
-            <Switch
-                android:id="@+id/living_ambient"
-                style="@style/Toggle"
-                android:text="@string/living_ambient" />
-
-            <TextView
-                style="@style/Label"
-                android:text="@string/glow_strength" />
-
-            <SeekBar
-                android:id="@+id/glow_strength"
-                android:layout_width="match_parent"
-                android:layout_height="40dp" />
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="@string/section_visualizer" />
-
-            <RadioGroup
-                android:id="@+id/style_group"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <RadioButton
-                    android:id="@+id/style_bars"
-                    style="@style/Choice"
-                    android:text="@string/style_bars" />
-
-                <RadioButton
-                    android:id="@+id/style_circle"
-                    style="@style/Choice"
-                    android:text="@string/style_circle" />
-
-                <RadioButton
-                    android:id="@+id/style_wave"
-                    style="@style/Choice"
-                    android:text="@string/style_wave" />
-
-                <RadioButton
-                    android:id="@+id/style_none"
-                    style="@style/Choice"
-                    android:text="@string/style_none" />
-            </RadioGroup>
-
-            <LinearLayout
-                android:id="@+id/circle_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    style="@style/Label"
-                    android:text="@string/circle_y" />
-
-                <SeekBar
-                    android:id="@+id/circle_y"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp" />
-
-                <TextView
-                    style="@style/Label"
-                    android:text="@string/circle_size" />
-
-                <SeekBar
-                    android:id="@+id/circle_size"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp" />
-            </LinearLayout>
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="@string/section_effects" />
-
-            <Switch
-                android:id="@+id/effect_pulse"
-                style="@style/Toggle"
-                android:text="@string/effect_pulse" />
-
-            <Switch
-                android:id="@+id/effect_flash"
-                style="@style/Toggle"
-                android:text="@string/effect_flash" />
-
-            <Switch
-                android:id="@+id/effect_shake"
-                style="@style/Toggle"
-                android:text="@string/effect_shake" />
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="@string/section_color" />
-
-            <RadioGroup
-                android:id="@+id/color_group"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <RadioButton
-                    android:id="@+id/color_auto"
-                    style="@style/Choice"
-                    android:text="@string/color_auto" />
-
-                <RadioButton
-                    android:id="@+id/color_rainbow"
-                    style="@style/Choice"
-                    android:text="@string/color_rainbow" />
-
-                <RadioButton
-                    android:id="@+id/color_custom"
-                    style="@style/Choice"
-                    android:text="@string/color_custom" />
-            </RadioGroup>
-
-            <LinearLayout
-                android:id="@+id/hue_row"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    style="@style/Label"
-                    android:text="@string/hue" />
-
-                <SeekBar
-                    android:id="@+id/hue"
-                    android:layout_width="match_parent"
-                    android:layout_height="40dp" />
-            </LinearLayout>
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="@string/section_tuning" />
-
-            <TextView
-                style="@style/Label"
-                android:text="@string/sensitivity" />
-
-            <SeekBar
-                android:id="@+id/sensitivity"
-                android:layout_width="match_parent"
-                android:layout_height="40dp" />
-
-            <TextView
-                style="@style/Label"
-                android:text="@string/intensity" />
-
-            <SeekBar
-                android:id="@+id/intensity"
-                android:layout_width="match_parent"
-                android:layout_height="40dp" />
-
-            <TextView
-                style="@style/Label"
-                android:text="@string/bar_count" />
-
-            <SeekBar
-                android:id="@+id/bar_count"
-                android:layout_width="match_parent"
-                android:layout_height="40dp" />
-
-            <TextView
-                style="@style/SectionTitle"
-                android:text="@string/section_source" />
-
-            <RadioGroup
-                android:id="@+id/source_group"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <RadioButton
-                    android:id="@+id/source_system"
-                    style="@style/ChoiceRow"
-                    android:text="@string/source_system" />
-
-                <RadioButton
-                    android:id="@+id/source_mic"
-                    style="@style/ChoiceRow"
-                    android:text="@string/source_mic" />
-            </RadioGroup>
-        </LinearLayout>
+            android:paddingBottom="16dp" />
     </ScrollView>
 
-    <Button
-        android:id="@+id/set_wallpaper"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_margin="16dp"
-        android:backgroundTint="@color/accent"
-        android:text="@string/set_wallpaper"
-        android:textColor="#FF000000"
-        android:textStyle="bold" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/choose_image"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:text="@string/choose_image" />
+
+        <Button
+            android:id="@+id/set_wallpaper"
+            android:layout_width="0dp"
+            android:layout_height="56dp"
+            android:layout_weight="1"
+            android:backgroundTint="@color/accent"
+            android:text="@string/set_wallpaper"
+            android:textColor="#FF000000"
+            android:textStyle="bold" />
+    </LinearLayout>
 </LinearLayout>

@@ -10,18 +10,23 @@ music or video is playing on your phone.
   rotated correctly for camera photos.
 - **Living image:** the glowing, colorful parts of your picture light up and
   bloom with the music in their own colors. The image's dominant color follows
-  the bass and its second color follows the mids and highs. With **ambient
-  motion** on, the glow breathes, sparkles in the image's colors drift across
-  it, and the picture sways slowly, so it stays alive even in silence.
-- **Visualizers:** spectrum bars along the bottom, a circular ring around the
-  center, a smooth wave, or none.
-- **Image effects:** pulse/zoom with the bass, flash on beats, shake on beats.
-- **Colors:** picked automatically from your image, rainbow, or a custom hue.
-- **Tuning:** sensitivity, effect strength, bar count.
-- **Audio source:** what the phone is playing (default), or the microphone.
-- A live preview in the app, and changes apply instantly to the running wallpaper.
+  the bass and its second color follows the mids and highs.
+- **Idle animation:** the glow breathes, sparkles in the image's colors drift
+  across it, and the picture sways slowly, so it stays alive even in silence.
+- **Full control of every effect.** Each has its own slider (0 turns it off):
+  - Glow: bass glow, treble glow, beat flare, halo size, coverage (how much of
+    the image glows), swap colors
+  - Idle: breathing strength and speed, sway amount and speed
+  - Sparkles: amount, size, speed, brightness, music reaction
+  - Beat effects: pulse/zoom, flash, shake
+  - Visualizer overlay (bars, ring, wave or none): height, opacity, bar count,
+    ring position and size, colors
+  - Audio: sensitivity, phone audio or microphone
+- The preview stays on screen while you adjust. **Demo beat** lets you tune
+  without playing music, and there's a one-tap reset to defaults.
+- Changes apply instantly to the running wallpaper.
 - Battery-friendly: audio capture and drawing stop whenever the wallpaper isn't
-  visible, and it drops to a low frame rate during silence.
+  visible.
 
 ## Install
 

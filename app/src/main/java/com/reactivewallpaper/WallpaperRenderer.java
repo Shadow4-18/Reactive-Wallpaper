@@ -28,6 +28,7 @@ final class WallpaperRenderer {
     private LivingImage living;
     private float[] accentHues = DEFAULT_HUES;
     private float time;
+    private float swayPhase;
     private int gradientHeight = -1;
 
     WallpaperRenderer(float density) {
@@ -49,7 +50,7 @@ final class WallpaperRenderer {
         image = bitmap;
         accentHues = bitmap != null ? ImageStore.accentHues(bitmap) : DEFAULT_HUES;
         if (bitmap != null) {
-            living = new LivingImage(bitmap, accentHues);
+            living = new LivingImage(bitmap, accentHues, WallpaperSettings.DEFAULT_COVERAGE);
         }
     }
 
@@ -59,19 +60,23 @@ final class WallpaperRenderer {
 
     void draw(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s, float dt) {
         time += dt;
-        float intensity = s.intensity;
+        swayPhase += dt * s.swaySpeed;
         float bass = audio.bass();
         float beat = audio.beat();
 
-        drawBackground(canvas, w, h, s, bass, beat, intensity);
-        if (living != null && (s.glow || s.ambient)) {
+        drawBackground(canvas, w, h, s, bass, beat);
+        if (living != null) {
+            if (Math.abs(living.coverage() - s.glowCoverage) > 0.001f) {
+                living.release();
+                living = new LivingImage(image, accentHues, s.glowCoverage);
+            }
             living.draw(canvas, matrix, audio, s, dt, density);
         }
 
-        if (s.flash && beat > 0.01f) {
+        if (s.flash > 0f && beat > 0.01f) {
             fillPaint.setShader(null);
             fillPaint.setColor(blend(Color.WHITE, colorAt(s, 0.5f), 0.5f));
-            fillPaint.setAlpha((int) (255 * Math.min(0.45f, beat * 0.22f * intensity)));
+            fillPaint.setAlpha((int) (255 * Math.min(0.6f, beat * 0.3f * s.flash)));
             canvas.drawRect(0, 0, w, h, fillPaint);
         }
 
@@ -90,26 +95,25 @@ final class WallpaperRenderer {
         }
     }
 
-    private void drawBackground(Canvas canvas, int w, int h, WallpaperSettings s,
-                                float bass, float beat, float intensity) {
+    private void drawBackground(Canvas canvas, int w, int h, WallpaperSettings s, float bass, float beat) {
         float dx = 0f;
         float dy = 0f;
         float zoom = 1f;
-        if (s.pulse) {
-            zoom += 0.08f * intensity * bass + 0.03f * intensity * beat;
+        if (s.pulse > 0f) {
+            zoom += s.pulse * (0.08f * bass + 0.03f * beat);
         }
-        if (s.ambient) {
+        if (s.sway > 0f) {
             // Slow sway so the picture never sits completely still.
-            zoom += 0.03f + 0.012f * (float) Math.sin(time * 0.21f);
-            dx += (float) Math.sin(time * 0.13f) * 5f * density;
-            dy += (float) Math.cos(time * 0.17f) * 5f * density;
+            zoom += s.sway * (0.03f + 0.012f * (float) Math.sin(swayPhase * 0.21f));
+            dx += (float) Math.sin(swayPhase * 0.13f) * 5f * density * s.sway;
+            dy += (float) Math.cos(swayPhase * 0.17f) * 5f * density * s.sway;
         }
-        if (s.shake) {
-            float amount = 9f * density * intensity * beat;
+        if (s.shake > 0f) {
+            float amount = 9f * density * s.shake * beat;
             dx += (float) Math.sin(time * 61f) * amount;
             dy += (float) Math.cos(time * 47f) * amount;
             // Overscan so shaking never reveals the edges.
-            zoom += 0.05f * intensity;
+            zoom += 0.05f * s.shake;
         }
 
         if (image == null) {
@@ -144,7 +148,7 @@ final class WallpaperRenderer {
         float barWidth = Math.max(1f, slot * 0.62f);
         float radius = barWidth / 2f;
         float base = h * 0.9f;
-        float maxHeight = h * 0.24f * s.intensity;
+        float maxHeight = h * 0.24f * s.vizHeight;
         float minHeight = 3f * density;
         fillPaint.setShader(null);
         for (int i = 0; i < n; i++) {
@@ -153,12 +157,12 @@ final class WallpaperRenderer {
             int color = colorAt(s, i / (float) (n - 1));
 
             fillPaint.setColor(color);
-            fillPaint.setAlpha(230);
+            fillPaint.setAlpha((int) (255 * s.vizOpacity));
             rect.set(x, base - barHeight, x + barWidth, base);
             canvas.drawRoundRect(rect, radius, radius, fillPaint);
 
             // Soft reflection under the bar.
-            fillPaint.setAlpha(60);
+            fillPaint.setAlpha((int) (65 * s.vizOpacity));
             rect.set(x, base + 2f * density, x + barWidth, base + 2f * density + barHeight * 0.3f);
             canvas.drawRoundRect(rect, radius, radius, fillPaint);
         }
@@ -171,7 +175,7 @@ final class WallpaperRenderer {
         }
         float cx = w / 2f;
         float cy = h * s.circleY;
-        float radius = Math.min(w, h) * s.circleSize * (1f + 0.1f * bass * s.intensity);
+        float radius = Math.min(w, h) * s.circleSize * (1f + 0.1f * bass * s.vizHeight);
         int spokes = n * 2;
         double step = 2 * Math.PI / spokes;
         float spokeWidth = Math.max(2f, (float) (radius * step * 0.55));
@@ -183,7 +187,7 @@ final class WallpaperRenderer {
             double angle = i * step - Math.PI / 2;
             float cos = (float) Math.cos(angle);
             float sin = (float) Math.sin(angle);
-            float length = 4f * density + value * radius * 0.75f * s.intensity;
+            float length = 4f * density + value * radius * 0.75f * s.vizHeight;
             float x0 = cx + cos * radius;
             float y0 = cy + sin * radius;
             float x1 = cx + cos * (radius + length);
@@ -191,15 +195,15 @@ final class WallpaperRenderer {
             strokePaint.setColor(colorAt(s, band / (float) (n - 1)));
             // Wide faint stroke underneath for a neon glow.
             strokePaint.setStrokeWidth(spokeWidth * 2.6f);
-            strokePaint.setAlpha(55);
+            strokePaint.setAlpha((int) (60 * s.vizOpacity));
             canvas.drawLine(x0, y0, x1, y1, strokePaint);
             strokePaint.setStrokeWidth(spokeWidth);
-            strokePaint.setAlpha(235);
+            strokePaint.setAlpha((int) (255 * s.vizOpacity));
             canvas.drawLine(x0, y0, x1, y1, strokePaint);
         }
         strokePaint.setStrokeWidth(2f * density);
         strokePaint.setColor(colorAt(s, 0f));
-        strokePaint.setAlpha(140);
+        strokePaint.setAlpha((int) (150 * s.vizOpacity));
         canvas.drawCircle(cx, cy, radius - 4f * density, strokePaint);
     }
 
@@ -209,7 +213,7 @@ final class WallpaperRenderer {
             return;
         }
         float base = h * 0.86f;
-        float maxHeight = h * 0.2f * s.intensity;
+        float maxHeight = h * 0.2f * s.vizHeight;
         float step = w / (float) (n - 1);
 
         path.reset();
@@ -231,17 +235,17 @@ final class WallpaperRenderer {
         int left = colorAt(s, 0f);
         int right = colorAt(s, 1f);
         fillPaint.setShader(new LinearGradient(0, 0, w, 0, left, right, Shader.TileMode.CLAMP));
-        fillPaint.setAlpha(120);
+        fillPaint.setAlpha((int) (130 * s.vizOpacity));
         canvas.drawPath(path, fillPaint);
         strokePaint.setShader(fillPaint.getShader());
         strokePaint.setStrokeWidth(3f * density);
-        strokePaint.setAlpha(255);
+        strokePaint.setAlpha((int) (255 * s.vizOpacity));
         canvas.drawPath(path, strokePaint);
 
         // Mirrored reflection below the baseline.
         canvas.save();
         canvas.scale(1f, -0.45f, 0, base);
-        fillPaint.setAlpha(50);
+        fillPaint.setAlpha((int) (55 * s.vizOpacity));
         canvas.drawPath(path, fillPaint);
         canvas.restore();
 

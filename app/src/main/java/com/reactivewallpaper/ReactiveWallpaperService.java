@@ -139,7 +139,8 @@ public class ReactiveWallpaperService extends WallpaperService {
             if (visible) {
                 long delay = FRAME_MS;
                 if (analyzer.isIdle()) {
-                    delay = settings.ambient ? AMBIENT_FRAME_MS : IDLE_FRAME_MS;
+                    boolean animated = settings.breathe > 0f || settings.sparkleAmount > 0f || settings.sway > 0f;
+                    delay = animated ? AMBIENT_FRAME_MS : IDLE_FRAME_MS;
                 }
                 handler.postDelayed(drawRunnable, delay);
             }

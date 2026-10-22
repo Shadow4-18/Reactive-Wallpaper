@@ -11,46 +11,4 @@
         <item name="android:navigationBarColor">@color/background</item>
     </style>
 
-    <style name="SectionTitle">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">20dp</item>
-        <item name="android:layout_marginBottom">6dp</item>
-        <item name="android:textSize">13sp</item>
-        <item name="android:textStyle">bold</item>
-        <item name="android:textAllCaps">true</item>
-        <item name="android:letterSpacing">0.08</item>
-        <item name="android:textColor">@color/accent</item>
-    </style>
-
-    <style name="Label">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">8dp</item>
-        <item name="android:textSize">15sp</item>
-        <item name="android:textColor">@color/text_primary</item>
-    </style>
-
-    <style name="Toggle">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">48dp</item>
-        <item name="android:textSize">15sp</item>
-        <item name="android:textColor">@color/text_primary</item>
-    </style>
-
-    <style name="Choice">
-        <item name="android:layout_width">0dp</item>
-        <item name="android:layout_weight">1</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:minHeight">48dp</item>
-        <item name="android:textSize">15sp</item>
-        <item name="android:textColor">@color/text_primary</item>
-    </style>
-
-    <style name="ChoiceRow">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">48dp</item>
-        <item name="android:textSize">15sp</item>
-        <item name="android:textColor">@color/text_primary</item>
-    </style>
 </resources>

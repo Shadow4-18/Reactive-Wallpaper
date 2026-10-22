@@ -18,12 +18,15 @@ import java.util.Random;
  */
 final class LivingImage {
     private static final int MAX_SPAWN_POINTS = 4000;
-    private static final int PARTICLE_COUNT = 70;
+    private static final int PARTICLE_COUNT = WallpaperSettings.MAX_SPARKLES;
+    /** Glow can stack up to this many times a layer's own brightness. */
+    private static final float MAX_LAYER_AMOUNT = 4f;
 
     /** Glow layers at reduced size: [hue group][0 = sharp, 1 = bloom]. */
     private final Bitmap[][] layers = new Bitmap[2][2];
     private final int imageWidth;
     private final int imageHeight;
+    private final float coverage;
 
     // Where sparkles may appear (normalized image coords) and their colors.
     private final float[] spawnU;
@@ -45,10 +48,17 @@ final class LivingImage {
     private final Matrix layerMatrix = new Matrix();
     private final float[] point = new float[2];
     private float time;
+    private float breathePhase;
 
-    LivingImage(Bitmap image, float[] hues) {
+    /**
+     * @param coverage 0 .. 1; higher lets dimmer, less saturated parts of the image glow too
+     */
+    LivingImage(Bitmap image, float[] hues, float coverage) {
         imageWidth = image.getWidth();
         imageHeight = image.getHeight();
+        this.coverage = coverage;
+        float lowEdge = 0.7f - 0.55f * coverage;
+        float saturationFloor = 0.15f + 0.35f * coverage;
         addPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
 
         int w = Math.max(1, imageWidth / 2);
@@ -70,7 +80,8 @@ final class LivingImage {
         for (int i = 0; i < pixels.length; i++) {
             int c = pixels[i];
             toHsv(c, hsv);
-            float weight = smoothstep(0.4f, 0.9f, hsv[2]) * (0.25f + 0.75f * hsv[1]);
+            float weight = smoothstep(lowEdge, lowEdge + 0.45f, hsv[2])
+                    * (saturationFloor + (1f - saturationFloor) * hsv[1]);
             if (weight < 0.02f) {
                 continue;
             }
@@ -86,7 +97,7 @@ final class LivingImage {
             groupB[i] = scale(c, weight * (1f - toA));
 
             // Reservoir-sample bright vivid points as sparkle spawn spots.
-            if (weight > 0.35f && hsv[1] > 0.3f) {
+            if (weight > 0.3f && hsv[1] > 0.3f) {
                 int slot = candidates < MAX_SPAWN_POINTS ? candidates : random.nextInt(candidates + 1);
                 if (slot < MAX_SPAWN_POINTS) {
                     tmpU[slot] = (i % w + 0.5f) / w;
@@ -122,6 +133,10 @@ final class LivingImage {
         }
     }
 
+    float coverage() {
+        return coverage;
+    }
+
     void release() {
         for (Bitmap[] group : layers) {
             for (Bitmap b : group) {
@@ -138,55 +153,51 @@ final class LivingImage {
     void draw(Canvas canvas, Matrix imageMatrix, AudioAnalyzer audio, WallpaperSettings s,
               float dt, float density) {
         time += dt;
+        breathePhase += dt * s.breatheSpeed;
         float bass = audio.bass();
         float beat = audio.beat();
         float high = audio.high();
-        float strength = s.glowStrength;
 
-        float idleA = 0f;
-        float idleB = 0f;
-        if (s.ambient) {
-            idleA = 0.2f + 0.16f * (float) Math.sin(time * 1.1f);
-            idleB = 0.2f + 0.16f * (float) Math.sin(time * 0.9f + 2.1f);
-        }
-        float audioA = 0f;
-        float audioB = 0f;
-        if (s.glow) {
-            audioA = bass * 1.1f + beat * 0.7f;
-            audioB = high * 1.3f + beat * 0.25f;
-        }
-        drawGroup(canvas, imageMatrix, 0, (idleA + audioA) * strength);
-        drawGroup(canvas, imageMatrix, 1, (idleB + audioB) * strength);
+        float idleA = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 1.1f));
+        float idleB = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 0.9f + 2.1f));
+        float bassAmount = idleA + s.bassGlow * bass * 1.3f + s.beatFlare * beat;
+        float highAmount = idleB + s.highGlow * high * 1.6f + s.beatFlare * beat * 0.35f;
+        int bassGroup = s.swapGlowColors ? 1 : 0;
+        drawGroup(canvas, imageMatrix, bassGroup, bassAmount, s.bloom);
+        drawGroup(canvas, imageMatrix, 1 - bassGroup, highAmount, s.bloom);
 
-        if (s.ambient && spawnCount > 0) {
-            drawParticles(canvas, imageMatrix, dt, density, bass, beat, audio.level(), strength);
+        int sparkles = Math.round(s.sparkleAmount * PARTICLE_COUNT);
+        if (sparkles > 0 && spawnCount > 0) {
+            drawParticles(canvas, imageMatrix, sparkles, dt, density, bass, beat, audio.level(), s);
         }
     }
 
-    private void drawGroup(Canvas canvas, Matrix imageMatrix, int group, float amount) {
+    private void drawGroup(Canvas canvas, Matrix imageMatrix, int group, float amount, float bloom) {
+        drawLayer(canvas, imageMatrix, layers[group][0], amount * 0.8f);
+        drawLayer(canvas, imageMatrix, layers[group][1], amount * bloom);
+    }
+
+    /** Adds the layer on top `amount` times its brightness, stacking draws past 1. */
+    private void drawLayer(Canvas canvas, Matrix imageMatrix, Bitmap b, float amount) {
+        amount = Math.min(amount, MAX_LAYER_AMOUNT);
         if (amount <= 0.01f) {
             return;
         }
-        for (int layer = 0; layer < 2; layer++) {
-            Bitmap b = layers[group][layer];
-            float alpha = layer == 0 ? Math.min(1f, amount * 0.75f) : Math.min(1f, amount);
-            layerMatrix.set(imageMatrix);
-            layerMatrix.preScale(imageWidth / (float) b.getWidth(), imageHeight / (float) b.getHeight());
-            addPaint.setAlpha((int) (alpha * 255));
+        layerMatrix.set(imageMatrix);
+        layerMatrix.preScale(imageWidth / (float) b.getWidth(), imageHeight / (float) b.getHeight());
+        while (amount > 0.01f) {
+            addPaint.setAlpha((int) (Math.min(1f, amount) * 255));
             canvas.drawBitmap(b, layerMatrix, addPaint);
-            // Loud passages push the glow past a single layer's full brightness.
-            if (layer == 1 && amount > 1.2f) {
-                addPaint.setAlpha((int) (Math.min(1f, amount - 1.2f) * 255));
-                canvas.drawBitmap(b, layerMatrix, addPaint);
-            }
+            amount -= 1f;
         }
     }
 
-    private void drawParticles(Canvas canvas, Matrix imageMatrix, float dt, float density,
-                               float bass, float beat, float level, float strength) {
-        float speed = 1f + 4f * level + 2f * beat;
-        for (int i = 0; i < PARTICLE_COUNT; i++) {
-            pLife[i] += dt * (1f + level);
+    private void drawParticles(Canvas canvas, Matrix imageMatrix, int count, float dt, float density,
+                               float bass, float beat, float level, WallpaperSettings s) {
+        float react = s.sparkleReact;
+        float speed = s.sparkleSpeed * (1f + react * (4f * level + 2f * beat));
+        for (int i = 0; i < count; i++) {
+            pLife[i] += dt * s.sparkleSpeed * (1f + react * level);
             if (pLife[i] >= pMaxLife[i]) {
                 respawn(i);
             }
@@ -197,17 +208,18 @@ final class LivingImage {
             float life = pLife[i] / pMaxLife[i];
             float fade = (float) Math.sin(Math.PI * life);
             float twinkle = 0.6f + 0.4f * (float) Math.sin(time * 3f + pPhase[i] * 5f);
-            float alpha = Math.min(1f, fade * twinkle * (0.55f + 0.8f * level + 0.6f * beat) * strength);
+            float alpha = Math.min(1f, fade * twinkle * s.sparkleBrightness
+                    * (0.6f + react * (0.8f * level + 0.6f * beat)));
             if (alpha <= 0.01f) {
                 continue;
             }
             point[0] = pu[i] * imageWidth;
             point[1] = pv[i] * imageHeight;
             imageMatrix.mapPoints(point);
-            float size = pSize[i] * density * (1f + 0.8f * bass + 0.6f * beat);
+            float size = pSize[i] * s.sparkleSize * density * (1f + react * (0.8f * bass + 0.6f * beat));
 
             addPaint.setColor(pColor[i]);
-            addPaint.setAlpha((int) (alpha * 60));
+            addPaint.setAlpha((int) (alpha * 70));
             canvas.drawCircle(point[0], point[1], size * 3.5f, addPaint);
             addPaint.setAlpha((int) (alpha * 255));
             canvas.drawCircle(point[0], point[1], size, addPaint);

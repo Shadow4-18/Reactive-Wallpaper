@@ -8,25 +8,33 @@ import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.CompoundButton;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_IMAGE = 1;
     private static final int REQUEST_AUDIO = 2;
+    private static final int SEEK_STEPS = 1000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -35,10 +43,13 @@ public class MainActivity extends Activity {
     private WallpaperRenderer renderer;
     private AudioAnalyzer analyzer;
     private AudioController audio;
+    private DemoAudioInput demo;
+    private boolean demoOn;
     private PreviewView preview;
     private TextView permissionNote;
-    private View hueRow;
-    private View circleRow;
+    private LinearLayout controls;
+    private View circleOptions;
+    private View hueOption;
     private boolean resumed;
 
     @Override
@@ -50,6 +61,7 @@ public class MainActivity extends Activity {
         analyzer = new AudioAnalyzer(settings.barCount);
         analyzer.setSensitivity(settings.sensitivity);
         audio = new AudioController(this, analyzer);
+        demo = new DemoAudioInput(analyzer);
         renderer = new WallpaperRenderer(getResources().getDisplayMetrics().density);
 
         View root = findViewById(R.id.root);
@@ -66,69 +78,118 @@ public class MainActivity extends Activity {
 
         permissionNote = findViewById(R.id.permission_note);
         permissionNote.setOnClickListener(v -> requestAudioPermission());
-
         findViewById(R.id.choose_image).setOnClickListener(v -> chooseImage());
         findViewById(R.id.set_wallpaper).setOnClickListener(v -> applyWallpaper());
 
-        bindRadio(R.id.style_group, new int[] {R.id.style_bars, R.id.style_circle, R.id.style_wave, R.id.style_none},
-                new int[] {WallpaperSettings.STYLE_BARS, WallpaperSettings.STYLE_CIRCLE,
-                        WallpaperSettings.STYLE_WAVE, WallpaperSettings.STYLE_NONE},
-                settings.style, value -> {
-                    settings.style = value;
-                    updateCircleVisibility();
-                });
-        bindRadio(R.id.color_group, new int[] {R.id.color_auto, R.id.color_rainbow, R.id.color_custom},
-                new int[] {WallpaperSettings.COLOR_AUTO, WallpaperSettings.COLOR_RAINBOW,
-                        WallpaperSettings.COLOR_CUSTOM},
-                settings.colorMode, value -> {
-                    settings.colorMode = value;
-                    updateHueVisibility();
-                });
-        bindRadio(R.id.source_group, new int[] {R.id.source_system, R.id.source_mic},
-                new int[] {WallpaperSettings.SOURCE_SYSTEM, WallpaperSettings.SOURCE_MIC},
-                settings.source, value -> {
-                    settings.source = value;
-                    if (resumed) {
-                        audio.start(value);
-                    }
-                });
-
-        bindSwitch(R.id.effect_pulse, settings.pulse, checked -> settings.pulse = checked);
-        bindSwitch(R.id.effect_flash, settings.flash, checked -> settings.flash = checked);
-        bindSwitch(R.id.effect_shake, settings.shake, checked -> settings.shake = checked);
-        bindSwitch(R.id.living_glow, settings.glow, checked -> settings.glow = checked);
-        bindSwitch(R.id.living_ambient, settings.ambient, checked -> settings.ambient = checked);
-        bindSeek(R.id.glow_strength, (settings.glowStrength - 0.25f) / 1.75f,
-                p -> settings.glowStrength = 0.25f + p * 1.75f);
-
-        // SeekBars run 0..100 and map onto each setting's range.
-        bindSeek(R.id.sensitivity, (settings.sensitivity - 0.25f) / 2.75f, p -> {
-            settings.sensitivity = 0.25f + p * 2.75f;
-            analyzer.setSensitivity(settings.sensitivity);
-        });
-        bindSeek(R.id.intensity, (settings.intensity - 0.25f) / 1.75f,
-                p -> settings.intensity = 0.25f + p * 1.75f);
-        bindSeek(R.id.bar_count,
-                (settings.barCount - WallpaperSettings.MIN_BARS)
-                        / (float) (WallpaperSettings.MAX_BARS - WallpaperSettings.MIN_BARS),
-                p -> {
-                    settings.barCount = Math.round(WallpaperSettings.MIN_BARS
-                            + p * (WallpaperSettings.MAX_BARS - WallpaperSettings.MIN_BARS));
-                    analyzer.setBandCount(settings.barCount);
-                });
-        bindSeek(R.id.hue, settings.hue / 360f, p -> settings.hue = p * 360f);
-        bindSeek(R.id.circle_y, (settings.circleY - 0.2f) / 0.6f, p -> settings.circleY = 0.2f + p * 0.6f);
-        bindSeek(R.id.circle_size, (settings.circleSize - 0.15f) / 0.3f,
-                p -> settings.circleSize = 0.15f + p * 0.3f);
-
-        hueRow = findViewById(R.id.hue_row);
-        updateHueVisibility();
-        circleRow = findViewById(R.id.circle_row);
-        updateCircleVisibility();
+        controls = findViewById(R.id.controls);
+        buildControls();
 
         if (!AudioController.hasPermission(this)) {
             requestAudioPermission();
         }
+    }
+
+    private void buildControls() {
+        controls.removeAllViews();
+        WallpaperSettings s = settings;
+
+        LinearLayout glow = section("Glow (the image's own colors)", true);
+        slider(glow, "Bass glow", 0f, 3f, () -> s.bassGlow, v -> s.bassGlow = v, MainActivity::percent);
+        slider(glow, "Treble glow", 0f, 3f, () -> s.highGlow, v -> s.highGlow = v, MainActivity::percent);
+        slider(glow, "Beat flare", 0f, 3f, () -> s.beatFlare, v -> s.beatFlare = v, MainActivity::percent);
+        slider(glow, "Halo size", 0f, 3f, () -> s.bloom, v -> s.bloom = v, MainActivity::percent);
+        slider(glow, "Coverage (how much of the image glows)", 0f, 1f,
+                () -> s.glowCoverage, v -> s.glowCoverage = v, MainActivity::percent);
+        toggle(glow, "Swap which color follows the bass",
+                () -> s.swapGlowColors, v -> s.swapGlowColors = v);
+
+        LinearLayout idle = section("Idle animation (moves without sound)", true);
+        slider(idle, "Breathing glow", 0f, 2f, () -> s.breathe, v -> s.breathe = v, MainActivity::percent);
+        slider(idle, "Breathing speed", 0.25f, 3f, () -> s.breatheSpeed, v -> s.breatheSpeed = v, MainActivity::speed);
+        slider(idle, "Sway", 0f, 2f, () -> s.sway, v -> s.sway = v, MainActivity::percent);
+        slider(idle, "Sway speed", 0.25f, 3f, () -> s.swaySpeed, v -> s.swaySpeed = v, MainActivity::speed);
+
+        LinearLayout sparkles = section("Sparkles", false);
+        slider(sparkles, "Amount", 0f, 1f, () -> s.sparkleAmount, v -> s.sparkleAmount = v,
+                v -> Math.round(v * WallpaperSettings.MAX_SPARKLES) == 0
+                        ? "Off" : String.valueOf(Math.round(v * WallpaperSettings.MAX_SPARKLES)));
+        slider(sparkles, "Size", 0.25f, 3f, () -> s.sparkleSize, v -> s.sparkleSize = v, MainActivity::percent);
+        slider(sparkles, "Speed", 0.25f, 3f, () -> s.sparkleSpeed, v -> s.sparkleSpeed = v, MainActivity::speed);
+        slider(sparkles, "Brightness", 0f, 2f, () -> s.sparkleBrightness, v -> s.sparkleBrightness = v,
+                MainActivity::percent);
+        slider(sparkles, "Music reaction", 0f, 2f, () -> s.sparkleReact, v -> s.sparkleReact = v,
+                MainActivity::percent);
+
+        LinearLayout beat = section("Beat effects", false);
+        slider(beat, "Pulse (zoom with the bass)", 0f, 2f, () -> s.pulse, v -> s.pulse = v, MainActivity::percent);
+        slider(beat, "Flash", 0f, 2f, () -> s.flash, v -> s.flash = v, MainActivity::percent);
+        slider(beat, "Shake", 0f, 2f, () -> s.shake, v -> s.shake = v, MainActivity::percent);
+
+        LinearLayout viz = section("Visualizer overlay", false);
+        choice(viz, new String[] {"None", "Bars", "Circle", "Wave"},
+                new int[] {WallpaperSettings.STYLE_NONE, WallpaperSettings.STYLE_BARS,
+                        WallpaperSettings.STYLE_CIRCLE, WallpaperSettings.STYLE_WAVE},
+                s.style, v -> {
+                    s.style = v;
+                    updateVisibility();
+                });
+        slider(viz, "Height", 0f, 2f, () -> s.vizHeight, v -> s.vizHeight = v, MainActivity::percent);
+        slider(viz, "Opacity", 0f, 1f, () -> s.vizOpacity, v -> s.vizOpacity = v, MainActivity::percent);
+        slider(viz, "Bar count", WallpaperSettings.MIN_BARS, WallpaperSettings.MAX_BARS,
+                () -> s.barCount, v -> {
+                    s.barCount = Math.round(v);
+                    analyzer.setBandCount(s.barCount);
+                }, v -> String.valueOf(Math.round(v)));
+        LinearLayout circle = group(viz);
+        slider(circle, "Ring position (up / down)", 0.2f, 0.8f, () -> s.circleY, v -> s.circleY = v,
+                MainActivity::percent);
+        slider(circle, "Ring size", 0.15f, 0.45f, () -> s.circleSize, v -> s.circleSize = v, MainActivity::percent);
+        circleOptions = circle;
+        label(viz, "Color");
+        choice(viz, new String[] {"From image", "Rainbow", "Custom"},
+                new int[] {WallpaperSettings.COLOR_AUTO, WallpaperSettings.COLOR_RAINBOW,
+                        WallpaperSettings.COLOR_CUSTOM},
+                s.colorMode, v -> {
+                    s.colorMode = v;
+                    updateVisibility();
+                });
+        LinearLayout hue = group(viz);
+        slider(hue, "Hue", 0f, 360f, () -> s.hue, v -> s.hue = v, v -> Math.round(v) + "°");
+        hueOption = hue;
+
+        LinearLayout sound = section("Audio", false);
+        slider(sound, "Sensitivity", 0.25f, 3f, () -> s.sensitivity, v -> {
+            s.sensitivity = v;
+            analyzer.setSensitivity(v);
+        }, MainActivity::percent);
+        label(sound, "React to");
+        choice(sound, new String[] {"Phone audio", "Microphone"},
+                new int[] {WallpaperSettings.SOURCE_SYSTEM, WallpaperSettings.SOURCE_MIC},
+                s.source, v -> {
+                    s.source = v;
+                    restartAudio();
+                });
+        toggle(sound, "Demo beat in preview (tune without music)", () -> demoOn, v -> {
+            demoOn = v;
+            restartAudio();
+        });
+
+        Button reset = new Button(this);
+        reset.setText("Reset all effects to defaults");
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(24);
+        controls.addView(reset, lp);
+        reset.setOnClickListener(v -> {
+            settings = settings.resetEffects();
+            settings.save(this);
+            analyzer.setSensitivity(settings.sensitivity);
+            analyzer.setBandCount(settings.barCount);
+            preview.setSettings(settings);
+            buildControls();
+        });
+
+        updateVisibility();
     }
 
     @Override
@@ -136,7 +197,7 @@ public class MainActivity extends Activity {
         super.onResume();
         resumed = true;
         updatePermissionNote();
-        audio.start(settings.source);
+        restartAudio();
         preview.setRunning(true);
     }
 
@@ -146,6 +207,7 @@ public class MainActivity extends Activity {
         resumed = false;
         preview.setRunning(false);
         audio.stop();
+        demo.stop();
     }
 
     @Override
@@ -155,12 +217,26 @@ public class MainActivity extends Activity {
         renderer.release();
     }
 
+    private void restartAudio() {
+        if (!resumed) {
+            return;
+        }
+        if (demoOn) {
+            audio.stop();
+            demo.start();
+        } else {
+            demo.stop();
+            audio.stop();
+            audio.start(settings.source);
+        }
+    }
+
     private void sizePreviewToScreen() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int screenW = Math.min(dm.widthPixels, dm.heightPixels);
         int screenH = Math.max(dm.widthPixels, dm.heightPixels);
         ViewGroup.LayoutParams lp = preview.getLayoutParams();
-        lp.height = (int) (dm.heightPixels * 0.5f);
+        lp.height = (int) (dm.heightPixels * 0.38f);
         lp.width = (int) (lp.height * screenW / (float) screenH);
         preview.setLayoutParams(lp);
     }
@@ -250,10 +326,7 @@ public class MainActivity extends Activity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_AUDIO) {
             updatePermissionNote();
-            if (resumed) {
-                audio.stop();
-                audio.start(settings.source);
-            }
+            restartAudio();
         }
     }
 
@@ -261,12 +334,9 @@ public class MainActivity extends Activity {
         permissionNote.setVisibility(AudioController.hasPermission(this) ? View.GONE : View.VISIBLE);
     }
 
-    private void updateHueVisibility() {
-        hueRow.setVisibility(settings.colorMode == WallpaperSettings.COLOR_CUSTOM ? View.VISIBLE : View.GONE);
-    }
-
-    private void updateCircleVisibility() {
-        circleRow.setVisibility(settings.style == WallpaperSettings.STYLE_CIRCLE ? View.VISIBLE : View.GONE);
+    private void updateVisibility() {
+        circleOptions.setVisibility(settings.style == WallpaperSettings.STYLE_CIRCLE ? View.VISIBLE : View.GONE);
+        hueOption.setVisibility(settings.colorMode == WallpaperSettings.COLOR_CUSTOM ? View.VISIBLE : View.GONE);
     }
 
     private void changed() {
@@ -274,53 +344,128 @@ public class MainActivity extends Activity {
         preview.setSettings(settings);
     }
 
-    private interface IntSetter {
-        void set(int value);
-    }
+    // ---- Control builders -------------------------------------------------
 
-    private interface BoolSetter {
-        void set(boolean value);
+    private interface FloatGetter {
+        float get();
     }
 
     private interface FloatSetter {
         void set(float value);
     }
 
-    private void bindRadio(int groupId, int[] buttonIds, int[] values, int current, IntSetter setter) {
-        RadioGroup group = findViewById(groupId);
-        for (int i = 0; i < values.length; i++) {
-            if (values[i] == current) {
-                group.check(buttonIds[i]);
-            }
-        }
-        group.setOnCheckedChangeListener((g, checkedId) -> {
-            for (int i = 0; i < buttonIds.length; i++) {
-                if (buttonIds[i] == checkedId) {
-                    setter.set(values[i]);
-                    changed();
-                }
-            }
-        });
+    private interface BoolGetter {
+        boolean get();
     }
 
-    private void bindSwitch(int id, boolean current, BoolSetter setter) {
-        CompoundButton button = findViewById(id);
-        button.setChecked(current);
-        button.setOnCheckedChangeListener((b, checked) -> {
-            setter.set(checked);
-            changed();
-        });
+    private interface BoolSetter {
+        void set(boolean value);
     }
 
-    private void bindSeek(int id, float fraction, FloatSetter setter) {
-        SeekBar bar = findViewById(id);
-        bar.setMax(100);
-        bar.setProgress(Math.round(Math.max(0f, Math.min(1f, fraction)) * 100));
+    private interface IntSetter {
+        void set(int value);
+    }
+
+    private interface Formatter {
+        String format(float value);
+    }
+
+    private static String percent(float v) {
+        int p = Math.round(v * 100);
+        return p == 0 ? "Off" : p + "%";
+    }
+
+    private static String speed(float v) {
+        return String.format(Locale.US, "%.2f×", v);
+    }
+
+    private int dp(float value) {
+        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value,
+                getResources().getDisplayMetrics()));
+    }
+
+    /** A collapsible section; returns the container its controls go in. */
+    private LinearLayout section(String title, boolean expanded) {
+        TextView header = new TextView(this);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        header.setTypeface(Typeface.DEFAULT_BOLD);
+        header.setLetterSpacing(0.06f);
+        header.setAllCaps(true);
+        header.setTextColor(getColor(R.color.accent));
+        header.setMinHeight(dp(48));
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
+        controls.addView(header, lp);
+
+        LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(0, 0, 0, dp(8));
+        controls.addView(body, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        Runnable refresh = () -> header.setText((body.getVisibility() == View.VISIBLE ? "▾  " : "▸  ") + title);
+        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        refresh.run();
+        header.setOnClickListener(v -> {
+            body.setVisibility(body.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            refresh.run();
+        });
+        return body;
+    }
+
+    /** A plain sub-container, used for controls that show or hide together. */
+    private LinearLayout group(LinearLayout parent) {
+        LinearLayout g = new LinearLayout(this);
+        g.setOrientation(LinearLayout.VERTICAL);
+        parent.addView(g, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return g;
+    }
+
+    private void label(LinearLayout parent, String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        label.setTextColor(getColor(R.color.text_primary));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(10);
+        parent.addView(label, lp);
+    }
+
+    private void slider(LinearLayout parent, String title, float min, float max,
+                        FloatGetter getter, FloatSetter setter, Formatter formatter) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        TextView label = new TextView(this);
+        label.setText(title);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        label.setTextColor(getColor(R.color.text_primary));
+        TextView value = new TextView(this);
+        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        value.setTextColor(getColor(R.color.text_secondary));
+        value.setText(formatter.format(getter.get()));
+        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(value, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowLp.topMargin = dp(10);
+        parent.addView(row, rowLp);
+
+        SeekBar bar = new SeekBar(this);
+        bar.setMax(SEEK_STEPS);
+        float fraction = (getter.get() - min) / (max - min);
+        bar.setProgress(Math.round(Math.max(0f, Math.min(1f, fraction)) * SEEK_STEPS));
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser) {
-                    setter.set(progress / 100f);
+                    float v = min + (max - min) * progress / SEEK_STEPS;
+                    setter.set(v);
+                    value.setText(formatter.format(v));
                     preview.setSettings(settings);
                 }
             }
@@ -334,5 +479,48 @@ public class MainActivity extends Activity {
                 changed();
             }
         });
+        parent.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)));
+    }
+
+    private void toggle(LinearLayout parent, String title, BoolGetter getter, BoolSetter setter) {
+        Switch toggle = new Switch(this);
+        toggle.setText(title);
+        toggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        toggle.setTextColor(getColor(R.color.text_primary));
+        toggle.setChecked(getter.get());
+        toggle.setOnCheckedChangeListener((b, checked) -> {
+            setter.set(checked);
+            changed();
+        });
+        parent.addView(toggle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
+    }
+
+    private void choice(LinearLayout parent, String[] labels, int[] values, int current, IntSetter setter) {
+        RadioGroup group = new RadioGroup(this);
+        group.setOrientation(RadioGroup.HORIZONTAL);
+        int[] ids = new int[labels.length];
+        for (int i = 0; i < labels.length; i++) {
+            RadioButton button = new RadioButton(this);
+            ids[i] = View.generateViewId();
+            button.setId(ids[i]);
+            button.setText(labels[i]);
+            button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            button.setTextColor(getColor(R.color.text_primary));
+            button.setMinHeight(dp(48));
+            group.addView(button, new RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            if (values[i] == current) {
+                group.check(ids[i]);
+            }
+        }
+        group.setOnCheckedChangeListener((g, checkedId) -> {
+            for (int i = 0; i < ids.length; i++) {
+                if (ids[i] == checkedId) {
+                    setter.set(values[i]);
+                    changed();
+                }
+            }
+        });
+        parent.addView(group, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 }
