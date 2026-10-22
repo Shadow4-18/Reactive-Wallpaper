@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private PreviewView preview;
     private TextView permissionNote;
     private View hueRow;
+    private View circleRow;
     private boolean resumed;
 
     @Override
@@ -72,7 +73,10 @@ public class MainActivity extends Activity {
         bindRadio(R.id.style_group, new int[] {R.id.style_bars, R.id.style_circle, R.id.style_wave, R.id.style_none},
                 new int[] {WallpaperSettings.STYLE_BARS, WallpaperSettings.STYLE_CIRCLE,
                         WallpaperSettings.STYLE_WAVE, WallpaperSettings.STYLE_NONE},
-                settings.style, value -> settings.style = value);
+                settings.style, value -> {
+                    settings.style = value;
+                    updateCircleVisibility();
+                });
         bindRadio(R.id.color_group, new int[] {R.id.color_auto, R.id.color_rainbow, R.id.color_custom},
                 new int[] {WallpaperSettings.COLOR_AUTO, WallpaperSettings.COLOR_RAINBOW,
                         WallpaperSettings.COLOR_CUSTOM},
@@ -109,9 +113,14 @@ public class MainActivity extends Activity {
                     analyzer.setBandCount(settings.barCount);
                 });
         bindSeek(R.id.hue, settings.hue / 360f, p -> settings.hue = p * 360f);
+        bindSeek(R.id.circle_y, (settings.circleY - 0.2f) / 0.6f, p -> settings.circleY = 0.2f + p * 0.6f);
+        bindSeek(R.id.circle_size, (settings.circleSize - 0.15f) / 0.3f,
+                p -> settings.circleSize = 0.15f + p * 0.3f);
 
         hueRow = findViewById(R.id.hue_row);
         updateHueVisibility();
+        circleRow = findViewById(R.id.circle_row);
+        updateCircleVisibility();
 
         if (!AudioController.hasPermission(this)) {
             requestAudioPermission();
@@ -250,6 +259,10 @@ public class MainActivity extends Activity {
 
     private void updateHueVisibility() {
         hueRow.setVisibility(settings.colorMode == WallpaperSettings.COLOR_CUSTOM ? View.VISIBLE : View.GONE);
+    }
+
+    private void updateCircleVisibility() {
+        circleRow.setVisibility(settings.style == WallpaperSettings.STYLE_CIRCLE ? View.VISIBLE : View.GONE);
     }
 
     private void changed() {

@@ -35,6 +35,10 @@ final class WallpaperSettings {
     /** 0 .. 360 */
     float hue = 190f;
     int source = SOURCE_SYSTEM;
+    /** Ring center as a fraction of screen height, 0.2 .. 0.8 */
+    float circleY = 0.5f;
+    /** Ring radius as a fraction of screen width, 0.15 .. 0.45 */
+    float circleSize = 0.27f;
     /** Bumped whenever a new image is chosen so running wallpapers reload it. */
     long imageVersion;
 
@@ -55,6 +59,8 @@ final class WallpaperSettings {
         s.colorMode = p.getInt("colorMode", s.colorMode);
         s.hue = p.getFloat("hue", s.hue);
         s.source = p.getInt("source", s.source);
+        s.circleY = p.getFloat("circleY", s.circleY);
+        s.circleSize = p.getFloat("circleSize", s.circleSize);
         s.imageVersion = p.getLong("imageVersion", s.imageVersion);
         return s;
     }
@@ -71,6 +77,8 @@ final class WallpaperSettings {
                 .putInt("colorMode", colorMode)
                 .putFloat("hue", hue)
                 .putInt("source", source)
+                .putFloat("circleY", circleY)
+                .putFloat("circleSize", circleSize)
                 .putLong("imageVersion", imageVersion)
                 .apply();
     }

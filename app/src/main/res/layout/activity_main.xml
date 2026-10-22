@@ -77,6 +77,31 @@
                     android:text="@string/style_none" />
             </RadioGroup>
 
+            <LinearLayout
+                android:id="@+id/circle_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    style="@style/Label"
+                    android:text="@string/circle_y" />
+
+                <SeekBar
+                    android:id="@+id/circle_y"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp" />
+
+                <TextView
+                    style="@style/Label"
+                    android:text="@string/circle_size" />
+
+                <SeekBar
+                    android:id="@+id/circle_size"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp" />
+            </LinearLayout>
+
             <TextView
                 style="@style/SectionTitle"
                 android:text="@string/section_effects" />

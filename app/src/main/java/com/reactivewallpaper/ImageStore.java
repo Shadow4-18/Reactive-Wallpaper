@@ -118,31 +118,55 @@ final class ImageStore {
         return rotated;
     }
 
-    /** Picks a vivid representative color from the image for "auto" coloring. */
-    static int accentColor(Bitmap bitmap) {
-        Bitmap small = Bitmap.createScaledBitmap(bitmap, 32, 32, true);
+    /**
+     * Picks the image's two most prominent vivid hues (e.g. pink and cyan in
+     * neon art) so "auto" coloring can blend between them. When the image has
+     * a single dominant hue, both entries are close to it.
+     */
+    static float[] accentHues(Bitmap bitmap) {
+        Bitmap small = Bitmap.createScaledBitmap(bitmap, 48, 48, true);
         float[] hsv = new float[3];
-        double x = 0;
-        double y = 0;
-        double weightSum = 0;
-        for (int py = 0; py < 32; py++) {
-            for (int px = 0; px < 32; px++) {
+        float[] histogram = new float[36];
+        float total = 0f;
+        for (int py = 0; py < 48; py++) {
+            for (int px = 0; px < 48; px++) {
                 Color.colorToHSV(small.getPixel(px, py), hsv);
-                double weight = hsv[1] * hsv[1] * hsv[2];
-                double rad = Math.toRadians(hsv[0]);
-                x += Math.cos(rad) * weight;
-                y += Math.sin(rad) * weight;
-                weightSum += weight;
+                float weight = hsv[1] * hsv[1] * hsv[2] * hsv[2];
+                histogram[(int) (hsv[0] / 10f) % 36] += weight;
+                total += weight;
             }
         }
         if (small != bitmap) {
             small.recycle();
         }
-        if (weightSum < 1.0) {
-            // Mostly grey image: a clean white-ish cyan reads well on it.
-            return Color.HSVToColor(new float[] {190f, 0.35f, 1f});
+        if (total < 2f) {
+            // Mostly grey image: a clean cyan reads well on it.
+            return new float[] {180f, 200f};
         }
-        float hue = (float) ((Math.toDegrees(Math.atan2(y, x)) + 360) % 360);
-        return Color.HSVToColor(new float[] {hue, 0.75f, 1f});
+        // Smooth the histogram over neighbouring bins so peaks aren't split.
+        float[] smooth = new float[36];
+        for (int i = 0; i < 36; i++) {
+            smooth[i] = histogram[(i + 35) % 36] * 0.5f + histogram[i] + histogram[(i + 1) % 36] * 0.5f;
+        }
+        int first = 0;
+        for (int i = 1; i < 36; i++) {
+            if (smooth[i] > smooth[first]) {
+                first = i;
+            }
+        }
+        int second = -1;
+        for (int i = 0; i < 36; i++) {
+            int distance = Math.min(Math.abs(i - first), 36 - Math.abs(i - first));
+            if (distance >= 6 && (second < 0 || smooth[i] > smooth[second])) {
+                second = i;
+            }
+        }
+        float hueA = first * 10f + 5f;
+        if (second < 0 || smooth[second] < smooth[first] * 0.25f) {
+            return new float[] {hueA, hueA + 40f};
+        }
+        float hueB = second * 10f + 5f;
+        // Order low-to-high so the blend runs the same way each time.
+        return hueA < hueB ? new float[] {hueA, hueB} : new float[] {hueB, hueA};
     }
 }

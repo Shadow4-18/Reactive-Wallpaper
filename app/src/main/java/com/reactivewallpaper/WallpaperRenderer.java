@@ -12,7 +12,7 @@ import android.graphics.Shader;
 
 /** Draws the image plus the audio-reactive effects. Shared by the wallpaper and the in-app preview. */
 final class WallpaperRenderer {
-    private static final int DEFAULT_ACCENT = 0xFF00E5FF;
+    private static final float[] DEFAULT_HUES = {185f, 300f};
 
     private final float density;
     private final Paint imagePaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
@@ -25,7 +25,7 @@ final class WallpaperRenderer {
     private final float[] hsv = new float[3];
 
     private Bitmap image;
-    private int accent = DEFAULT_ACCENT;
+    private float[] accentHues = DEFAULT_HUES;
     private float time;
     private int gradientHeight = -1;
 
@@ -42,7 +42,7 @@ final class WallpaperRenderer {
             image.recycle();
         }
         image = bitmap;
-        accent = bitmap != null ? ImageStore.accentColor(bitmap) : DEFAULT_ACCENT;
+        accentHues = bitmap != null ? ImageStore.accentHues(bitmap) : DEFAULT_HUES;
     }
 
     void release() {
@@ -108,9 +108,12 @@ final class WallpaperRenderer {
         canvas.drawColor(Color.BLACK);
         int bw = image.getWidth();
         int bh = image.getHeight();
-        float scale = Math.max(w / (float) bw, h / (float) bh) * zoom;
+        float scale = Math.max(w / (float) bw, h / (float) bh);
         matrix.setScale(scale, scale);
         matrix.postTranslate((w - bw * scale) / 2f + dx, (h - bh * scale) / 2f + dy);
+        // Zoom around the ring when there is one, so artwork under it stays lined up.
+        float pivotY = s.style == WallpaperSettings.STYLE_CIRCLE ? h * s.circleY : h / 2f;
+        matrix.postScale(zoom, zoom, w / 2f, pivotY);
         canvas.drawBitmap(image, matrix, imagePaint);
     }
 
@@ -150,12 +153,12 @@ final class WallpaperRenderer {
             return;
         }
         float cx = w / 2f;
-        float cy = h / 2f;
-        float radius = Math.min(w, h) * 0.27f * (1f + 0.1f * bass * s.intensity);
+        float cy = h * s.circleY;
+        float radius = Math.min(w, h) * s.circleSize * (1f + 0.1f * bass * s.intensity);
         int spokes = n * 2;
         double step = 2 * Math.PI / spokes;
+        float spokeWidth = Math.max(2f, (float) (radius * step * 0.55));
         strokePaint.setShader(null);
-        strokePaint.setStrokeWidth(Math.max(2f, (float) (radius * step * 0.55)));
         for (int i = 0; i < spokes; i++) {
             // Mirror the spectrum so the ring is symmetric left/right.
             int band = i < n ? i : spokes - 1 - i;
@@ -164,10 +167,18 @@ final class WallpaperRenderer {
             float cos = (float) Math.cos(angle);
             float sin = (float) Math.sin(angle);
             float length = 4f * density + value * radius * 0.75f * s.intensity;
+            float x0 = cx + cos * radius;
+            float y0 = cy + sin * radius;
+            float x1 = cx + cos * (radius + length);
+            float y1 = cy + sin * (radius + length);
             strokePaint.setColor(colorAt(s, band / (float) (n - 1)));
+            // Wide faint stroke underneath for a neon glow.
+            strokePaint.setStrokeWidth(spokeWidth * 2.6f);
+            strokePaint.setAlpha(55);
+            canvas.drawLine(x0, y0, x1, y1, strokePaint);
+            strokePaint.setStrokeWidth(spokeWidth);
             strokePaint.setAlpha(235);
-            canvas.drawLine(cx + cos * radius, cy + sin * radius,
-                    cx + cos * (radius + length), cy + sin * (radius + length), strokePaint);
+            canvas.drawLine(x0, y0, x1, y1, strokePaint);
         }
         strokePaint.setStrokeWidth(2f * density);
         strokePaint.setColor(colorAt(s, 0f));
@@ -235,8 +246,15 @@ final class WallpaperRenderer {
                 hsv[2] = 1f;
                 return Color.HSVToColor(hsv);
             default:
-                Color.colorToHSV(accent, hsv);
-                hsv[0] = (hsv[0] + position * 40f) % 360f;
+                // Blend between the image's two main hues along the shorter way round.
+                float from = accentHues[0];
+                float delta = accentHues[1] - from;
+                if (delta > 180f) {
+                    delta -= 360f;
+                }
+                hsv[0] = ((from + delta * position) % 360f + 360f) % 360f;
+                hsv[1] = 0.75f;
+                hsv[2] = 1f;
                 return Color.HSVToColor(hsv);
         }
     }
