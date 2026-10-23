@@ -112,7 +112,10 @@ final class WallpaperSettings {
     /** Stop animating after this many minutes without sound; 0 = never. */
     int sleepMinutes = 0;
 
-    /** Bumped whenever a new image is chosen so running wallpapers reload it. */
+    /**
+     * Bumped whenever the image or its painted glow mask changes, so running
+     * wallpapers reload both.
+     */
     long imageVersion;
 
     /** Where settings are read from: the app's preferences or a saved look. */
@@ -136,6 +139,17 @@ final class WallpaperSettings {
         void putLong(String key, long value);
     }
 
+    private static final String KEY_LOCK_LOOK = "lockLookId";
+
+    /** The saved look shown on the lock screen, or "" for the same as the home screen. */
+    static String lockLookId(Context context) {
+        return prefs(context).getString(KEY_LOCK_LOOK, "");
+    }
+
+    static void setLockLookId(Context context, String id) {
+        prefs(context).edit().putString(KEY_LOCK_LOOK, id == null ? "" : id).apply();
+    }
+
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
@@ -153,9 +167,8 @@ final class WallpaperSettings {
         SharedPreferences draft = context.getSharedPreferences(DRAFT_PREFS_NAME, Context.MODE_PRIVATE);
         if (!draft.contains("imageVersion")) {
             WallpaperSettings live = load(context);
-            if (ImageStore.hasImage(context)) {
-                ImageStore.copy(ImageStore.file(context), ImageStore.draftFile(context));
-            }
+            ImageStore.copyWithMask(ImageStore.file(context), ImageStore.maskFile(context),
+                    ImageStore.draftFile(context), ImageStore.draftMaskFile(context));
             live.saveDraft(context);
             return live;
         }

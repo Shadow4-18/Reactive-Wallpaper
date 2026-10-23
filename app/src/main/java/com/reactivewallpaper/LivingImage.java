@@ -55,15 +55,22 @@ final class LivingImage {
     private float time;
     private float breathePhase;
 
+    /** Mask value meaning "let the app decide" (painted masks store 0 = no glow, 255 = glow). */
+    static final int MASK_AUTO = 128;
+
+    /** Receives points that are good places for sparkles to appear. */
+    private interface SpawnSink {
+        void add(int index, int color);
+    }
+
     /**
      * @param coverage 0 .. 1; higher lets dimmer, less saturated parts of the image glow too
+     * @param mask painted glow mask (any size, gray: 0 = never glow, 128 = auto, 255 = always), or null
      */
-    LivingImage(Bitmap image, float[] hues, float coverage) {
+    LivingImage(Bitmap image, Bitmap mask, float[] hues, float coverage) {
         imageWidth = image.getWidth();
         imageHeight = image.getHeight();
         this.coverage = coverage;
-        float lowEdge = 0.7f - 0.55f * coverage;
-        float saturationFloor = 0.15f + 0.35f * coverage;
         addPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
         addStroke.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
         addStroke.setStyle(Paint.Style.STROKE);
@@ -71,51 +78,28 @@ final class LivingImage {
 
         int w = Math.max(1, imageWidth / 2);
         int h = Math.max(1, imageHeight / 2);
-        Bitmap half = Bitmap.createScaledBitmap(image, w, h, true);
-        int[] pixels = new int[w * h];
-        half.getPixels(pixels, 0, w, 0, 0, w, h);
-        if (half != image) {
-            half.recycle();
-        }
+        int[] pixels = pixelsAt(image, w, h);
+        int[] maskPixels = mask != null ? maskAt(mask, w, h) : null;
 
         int[] groupA = new int[w * h];
         int[] groupB = new int[w * h];
-        float[] hsv = new float[3];
         float[] tmpU = new float[MAX_SPAWN_POINTS];
         float[] tmpV = new float[MAX_SPAWN_POINTS];
         int[] tmpColor = new int[MAX_SPAWN_POINTS];
-        int candidates = 0;
-        for (int i = 0; i < pixels.length; i++) {
-            int c = pixels[i];
-            toHsv(c, hsv);
-            float weight = smoothstep(lowEdge, lowEdge + 0.45f, hsv[2])
-                    * (saturationFloor + (1f - saturationFloor) * hsv[1]);
-            if (weight < 0.02f) {
-                continue;
+        int[] candidates = {0};
+        // Reservoir-sample the candidate points so they cover the whole image evenly.
+        computeGlow(pixels, maskPixels, hues, coverage, groupA, groupB, (i, c) -> {
+            int n = candidates[0];
+            int slot = n < MAX_SPAWN_POINTS ? n : random.nextInt(n + 1);
+            if (slot < MAX_SPAWN_POINTS) {
+                tmpU[slot] = (i % w + 0.5f) / w;
+                tmpV[slot] = (i / w + 0.5f) / h;
+                tmpColor[slot] = c;
             }
-            float toA;
-            if (hsv[1] < 0.25f) {
-                toA = 0.5f;
-            } else {
-                float dA = hueDistance(hsv[0], hues[0]);
-                float dB = hueDistance(hsv[0], hues[1]);
-                toA = clamp((dB - dA) / 80f + 0.5f, 0f, 1f);
-            }
-            groupA[i] = scale(c, weight * toA);
-            groupB[i] = scale(c, weight * (1f - toA));
-
-            // Reservoir-sample bright vivid points as sparkle spawn spots.
-            if (weight > 0.3f && hsv[1] > 0.3f) {
-                int slot = candidates < MAX_SPAWN_POINTS ? candidates : random.nextInt(candidates + 1);
-                if (slot < MAX_SPAWN_POINTS) {
-                    tmpU[slot] = (i % w + 0.5f) / w;
-                    tmpV[slot] = (i / w + 0.5f) / h;
-                    tmpColor[slot] = c;
-                }
-                candidates++;
-            }
-        }
-        spawnCount = Math.min(candidates, MAX_SPAWN_POINTS);
+            candidates[0] = n + 1;
+        });
+        int candidateCount = candidates[0];
+        spawnCount = Math.min(candidateCount, MAX_SPAWN_POINTS);
         spawnU = tmpU;
         spawnV = tmpV;
         spawnColor = tmpColor;
@@ -139,6 +123,104 @@ final class LivingImage {
 
     float coverage() {
         return coverage;
+    }
+
+    private static int[] pixelsAt(Bitmap source, int w, int h) {
+        Bitmap scaled = Bitmap.createScaledBitmap(source, w, h, true);
+        int[] out = new int[w * h];
+        scaled.getPixels(out, 0, w, 0, 0, w, h);
+        if (scaled != source) {
+            scaled.recycle();
+        }
+        return out;
+    }
+
+    /** The painted mask at {@code w x h}, with feathered edges so glow fades in softly. */
+    private static int[] maskAt(Bitmap mask, int w, int h) {
+        int[] px = pixelsAt(mask, w, h);
+        int radius = Math.max(1, Math.max(w, h) / 300);
+        boxBlur(px, w, h, radius);
+        boxBlur(px, w, h, radius);
+        return px;
+    }
+
+    /**
+     * Glow for an image as the painter shows it: both color groups added
+     * together, at {@code w x h}. Call off the main thread.
+     */
+    static Bitmap glowPreview(Bitmap image, Bitmap mask, float[] hues, float coverage, int w, int h) {
+        int[] pixels = pixelsAt(image, w, h);
+        int[] maskPixels = mask != null ? maskAt(mask, w, h) : null;
+        int[] a = new int[w * h];
+        int[] b = new int[w * h];
+        computeGlow(pixels, maskPixels, hues, coverage, a, b, null);
+        for (int i = 0; i < a.length; i++) {
+            a[i] = Color.rgb(Math.min(255, Color.red(a[i]) + Color.red(b[i])),
+                    Math.min(255, Color.green(a[i]) + Color.green(b[i])),
+                    Math.min(255, Color.blue(a[i]) + Color.blue(b[i])));
+        }
+        return Bitmap.createBitmap(a, w, h, Bitmap.Config.ARGB_8888);
+    }
+
+    /**
+     * Decides how strongly each pixel glows and splits it between the two hue
+     * groups. A painted mask can force glow on (in the pixel's own hue, even if
+     * it is dim) or off.
+     */
+    private static void computeGlow(int[] pixels, int[] mask, float[] hues, float coverage,
+                                    int[] groupA, int[] groupB, SpawnSink spawns) {
+        float lowEdge = 0.7f - 0.55f * coverage;
+        float saturationFloor = 0.15f + 0.35f * coverage;
+        float[] hsv = new float[3];
+        for (int i = 0; i < pixels.length; i++) {
+            int c = pixels[i];
+            toHsv(c, hsv);
+            float weight = smoothstep(lowEdge, lowEdge + 0.45f, hsv[2])
+                    * (saturationFloor + (1f - saturationFloor) * hsv[1]);
+            float r = Color.red(c) * weight;
+            float g = Color.green(c) * weight;
+            float b = Color.blue(c) * weight;
+
+            float painted = mask != null ? (mask[i] & 0xFF) / 255f : 0.5f;
+            if (painted > 0.52f) {
+                // Painted "glow": the pixel brightened (up to 3x) in its own color, so
+                // dim areas glow but keep their texture. Pure black has nothing to glow.
+                float force = Math.min(1f, (painted - 0.5f) * 2f);
+                float gain = Math.min(3f, 0.7f / Math.max(hsv[2], 0.001f));
+                r += (Color.red(c) * gain - r) * force;
+                g += (Color.green(c) * gain - g) * force;
+                b += (Color.blue(c) * gain - b) * force;
+                r = Math.min(255f, r);
+                g = Math.min(255f, g);
+                b = Math.min(255f, b);
+                weight = Math.max(weight, force * Math.min(1f, hsv[2] * gain));
+            } else if (painted < 0.48f) {
+                // Painted "no glow".
+                float keep = Math.max(0f, painted * 2f);
+                r *= keep;
+                g *= keep;
+                b *= keep;
+                weight *= keep;
+            }
+            if (weight < 0.02f) {
+                continue;
+            }
+
+            float toA;
+            if (hsv[1] < 0.25f) {
+                toA = 0.5f;
+            } else {
+                float dA = hueDistance(hsv[0], hues[0]);
+                float dB = hueDistance(hsv[0], hues[1]);
+                toA = clamp((dB - dA) / 80f + 0.5f, 0f, 1f);
+            }
+            groupA[i] = Color.rgb((int) (r * toA), (int) (g * toA), (int) (b * toA));
+            groupB[i] = Color.rgb((int) (r * (1f - toA)), (int) (g * (1f - toA)), (int) (b * (1f - toA)));
+
+            if (spawns != null && weight > 0.3f && (hsv[1] > 0.3f || painted > 0.75f)) {
+                spawns.add(i, c);
+            }
+        }
     }
 
     void release() {
@@ -408,13 +490,6 @@ final class LivingImage {
         hsv[1] = Math.min(hsv[1], 0.7f);
         hsv[2] = 1f;
         return Color.HSVToColor(hsv);
-    }
-
-    private static int scale(int c, float f) {
-        if (f <= 0f) {
-            return 0xFF000000;
-        }
-        return Color.rgb((int) (Color.red(c) * f), (int) (Color.green(c) * f), (int) (Color.blue(c) * f));
     }
 
     private static float hueDistance(float a, float b) {

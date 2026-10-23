@@ -21,6 +21,8 @@ final class ImageStore {
     private static final String TAG = "ImageStore";
     private static final String FILE_NAME = "wallpaper_image";
     private static final String DRAFT_FILE_NAME = "editor_image";
+    private static final String MASK_FILE_NAME = "wallpaper_mask.png";
+    private static final String DRAFT_MASK_FILE_NAME = "editor_mask.png";
 
     private ImageStore() {}
 
@@ -32,6 +34,58 @@ final class ImageStore {
     /** The image being edited, which reaches the wallpaper only when applied. */
     static File draftFile(Context context) {
         return new File(context.getFilesDir(), DRAFT_FILE_NAME);
+    }
+
+    /** The painted glow mask for {@link #file}; absent means "all automatic". */
+    static File maskFile(Context context) {
+        return new File(context.getFilesDir(), MASK_FILE_NAME);
+    }
+
+    static File draftMaskFile(Context context) {
+        return new File(context.getFilesDir(), DRAFT_MASK_FILE_NAME);
+    }
+
+    /**
+     * Copies an image and its painted mask together. A missing source file
+     * removes the target, so the pair always matches. Call off the main thread.
+     */
+    static void copyWithMask(File fromImage, File fromMask, File toImage, File toMask) {
+        if (fromImage.length() > 0) {
+            copy(fromImage, toImage);
+        } else {
+            toImage.delete();
+        }
+        if (fromMask.length() > 0) {
+            copy(fromMask, toMask);
+        } else {
+            toMask.delete();
+        }
+    }
+
+    static Bitmap loadMask(File f) {
+        if (f.length() == 0) {
+            return null;
+        }
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        return BitmapFactory.decodeFile(f.getPath(), opts);
+    }
+
+    /** Saves a mask as PNG, or deletes the file when {@code mask} is null. */
+    static boolean saveMask(Bitmap mask, File f) {
+        if (mask == null) {
+            f.delete();
+            return true;
+        }
+        File temp = new File(f.getPath() + ".tmp");
+        try (OutputStream out = new FileOutputStream(temp)) {
+            mask.compress(Bitmap.CompressFormat.PNG, 100, out);
+        } catch (IOException e) {
+            Log.w(TAG, "Could not save mask", e);
+            temp.delete();
+            return false;
+        }
+        return temp.renameTo(f);
     }
 
     /** Copies one image file to another, via a temp file so a reader never sees half a file. */

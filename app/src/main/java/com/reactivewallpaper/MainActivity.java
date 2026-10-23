@@ -47,6 +47,9 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
     private static final int REQUEST_IMAGE = 1;
     private static final int REQUEST_AUDIO = 2;
+    private static final int REQUEST_PAINT = 3;
+    private static final int REQUEST_EXPORT = 4;
+    private static final int REQUEST_IMPORT = 5;
     private static final int SEEK_STEPS = 1000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -69,6 +72,9 @@ public class MainActivity extends Activity {
     private View circleOptions;
     private View hueOption;
     private LinearLayout looksRow;
+    private Button lockLookButton;
+    /** Looks waiting for the user to pick where to save the export. */
+    private java.util.List<PresetStore.Preset> pendingExport;
     private final Map<String, Boolean> expandedSections = new HashMap<>();
     private boolean resumed;
 
@@ -138,6 +144,32 @@ public class MainActivity extends Activity {
         saveLook.setOnClickListener(v -> saveLookDialog());
         looks.addView(saveLook, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        lockLookButton = new Button(this);
+        lockLookButton.setOnClickListener(v -> chooseLockLook());
+        looks.addView(lockLookButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout shareRow = new LinearLayout(this);
+        Button importLooks = new Button(this);
+        importLooks.setText("Import looks");
+        importLooks.setOnClickListener(v -> startImport());
+        Button exportLooks = new Button(this);
+        exportLooks.setText("Export all");
+        exportLooks.setOnClickListener(v -> {
+            java.util.List<PresetStore.Preset> mine = new java.util.ArrayList<>();
+            for (PresetStore.Preset p : PresetStore.all(this)) {
+                if (!p.builtIn) {
+                    mine.add(p);
+                }
+            }
+            if (mine.isEmpty()) {
+                Toast.makeText(this, "Save a look first.", Toast.LENGTH_SHORT).show();
+            } else {
+                startExport(mine, "Resona looks");
+            }
+        });
+        shareRow.addView(importLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        shareRow.addView(exportLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        looks.addView(shareRow);
         refreshLooks();
 
         LinearLayout glow = section("Glow (the image's own colors)", true);
@@ -147,6 +179,19 @@ public class MainActivity extends Activity {
         slider(glow, "Halo size", 0f, 3f, () -> s.bloom, v -> s.bloom = v, MainActivity::percent);
         slider(glow, "Coverage (how much of the image glows)", 0f, 1f,
                 () -> s.glowCoverage, v -> s.glowCoverage = v, MainActivity::percent);
+        Button paint = new Button(this);
+        paint.setText("Paint where it glows");
+        paint.setOnClickListener(v -> {
+            if (!ImageStore.hasDraftImage(this)) {
+                Toast.makeText(this, "Choose an image first.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent intent = new Intent(this, GlowPaintActivity.class);
+            intent.putExtra(GlowPaintActivity.EXTRA_COVERAGE, settings.glowCoverage);
+            startActivityForResult(intent, REQUEST_PAINT);
+        });
+        glow.addView(paint, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         toggle(glow, "Swap which color follows the bass",
                 () -> s.swapGlowColors, v -> s.swapGlowColors = v);
 
@@ -358,6 +403,97 @@ public class MainActivity extends Activity {
         for (PresetStore.Preset preset : PresetStore.all(this)) {
             looksRow.addView(lookItem(preset));
         }
+        PresetStore.Preset lock = PresetStore.find(this, WallpaperSettings.lockLookId(this));
+        lockLookButton.setText("Lock screen: " + (lock == null ? "same as home" : lock.name));
+    }
+
+    private void chooseLockLook() {
+        java.util.List<PresetStore.Preset> all = PresetStore.all(this);
+        String[] names = new String[all.size() + 1];
+        names[0] = "Same as home screen";
+        for (int i = 0; i < all.size(); i++) {
+            names[i + 1] = all.get(i).name;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Lock screen look")
+                .setItems(names, (d, which) -> {
+                    // Applies straight away: it picks between saved looks, it doesn't edit one.
+                    WallpaperSettings.setLockLookId(this, which == 0 ? "" : all.get(which - 1).id);
+                    refreshLooks();
+                    Toast.makeText(this, which == 0 ? "Lock screen matches the home screen"
+                            : "Lock screen will show “" + names[which] + "”", Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
+    private void startExport(java.util.List<PresetStore.Preset> presets, String fileName) {
+        pendingExport = presets;
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, fileName + ".resona");
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT);
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No app available to save files.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void startImport() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        try {
+            startActivityForResult(intent, REQUEST_IMPORT);
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No app available to open files.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void finishExport(Uri uri) {
+        java.util.List<PresetStore.Preset> presets = pendingExport;
+        pendingExport = null;
+        if (presets == null) {
+            return;
+        }
+        executor.execute(() -> {
+            String message;
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) {
+                    throw new java.io.IOException("Could not open the file");
+                }
+                PresetStore.export(this, presets, out);
+                message = presets.size() == 1 ? "Exported “" + presets.get(0).name + "”"
+                        : "Exported " + presets.size() + " looks";
+            } catch (java.io.IOException | SecurityException e) {
+                message = "Export failed: " + e.getMessage();
+            }
+            String text = message;
+            mainHandler.post(() -> Toast.makeText(this, text, Toast.LENGTH_LONG).show());
+        });
+    }
+
+    private void finishImport(Uri uri) {
+        executor.execute(() -> {
+            String message;
+            try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                if (in == null) {
+                    throw new java.io.IOException("Could not open the file");
+                }
+                int count = PresetStore.importFrom(this, in);
+                message = count == 0 ? "No looks found in that file."
+                        : count == 1 ? "Imported 1 look" : "Imported " + count + " looks";
+            } catch (java.io.IOException | SecurityException e) {
+                message = "Couldn't import: " + e.getMessage();
+            }
+            String text = message;
+            mainHandler.post(() -> {
+                if (!isDestroyed()) {
+                    refreshLooks();
+                    Toast.makeText(this, text, Toast.LENGTH_LONG).show();
+                }
+            });
+        });
     }
 
     private View lookItem(PresetStore.Preset preset) {
@@ -475,7 +611,7 @@ public class MainActivity extends Activity {
                     Toast.LENGTH_LONG).show();
             return;
         }
-        String[] actions = {"Update with current look", "Rename", "Delete"};
+        String[] actions = {"Update with current look", "Rename", "Export", "Delete"};
         new AlertDialog.Builder(this)
                 .setTitle(preset.name)
                 .setItems(actions, (d, which) -> {
@@ -492,6 +628,8 @@ public class MainActivity extends Activity {
                         });
                     } else if (which == 1) {
                         renameLookDialog(preset);
+                    } else if (which == 2) {
+                        startExport(java.util.Collections.singletonList(preset), preset.name);
                     } else {
                         new AlertDialog.Builder(this)
                                 .setTitle("Delete “" + preset.name + "”?")
@@ -679,6 +817,7 @@ public class MainActivity extends Activity {
         int h = dm.heightPixels / 2;
         executor.execute(() -> {
             Bitmap bitmap = ImageStore.load(ImageStore.draftFile(this), w, h);
+            Bitmap mask = ImageStore.loadMask(ImageStore.draftMaskFile(this));
             mainHandler.post(() -> {
                 if (isDestroyed()) {
                     if (bitmap != null) {
@@ -686,7 +825,7 @@ public class MainActivity extends Activity {
                     }
                     return;
                 }
-                renderer.setImage(bitmap);
+                renderer.setImage(bitmap, mask);
                 preview.invalidate();
             });
         });
@@ -706,12 +845,37 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_EXPORT) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                finishExport(data.getData());
+            } else {
+                pendingExport = null;
+            }
+            return;
+        }
+        if (requestCode == REQUEST_IMPORT) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                finishImport(data.getData());
+            }
+            return;
+        }
+        if (requestCode == REQUEST_PAINT && resultCode == RESULT_OK) {
+            // The painted mask counts as an image change: preview and wallpaper reload both.
+            settings.imageVersion = System.currentTimeMillis();
+            saveDraft();
+            loadPreviewImage();
+            return;
+        }
         if (requestCode != REQUEST_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) {
             return;
         }
         Uri uri = data.getData();
         executor.execute(() -> {
             boolean ok = ImageStore.importImage(this, uri);
+            if (ok) {
+                // A painted mask belongs to the old picture.
+                ImageStore.draftMaskFile(this).delete();
+            }
             mainHandler.post(() -> {
                 if (isDestroyed()) {
                     return;
@@ -739,12 +903,8 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             WallpaperSettings live = WallpaperSettings.load(this);
             if (draft.imageVersion != live.imageVersion) {
-                File image = ImageStore.draftFile(this);
-                if (image.length() > 0) {
-                    ImageStore.copy(image, ImageStore.file(this));
-                } else {
-                    ImageStore.file(this).delete();
-                }
+                ImageStore.copyWithMask(ImageStore.draftFile(this), ImageStore.draftMaskFile(this),
+                        ImageStore.file(this), ImageStore.maskFile(this));
             }
             // Saved after the image is in place, since saving is what tells the wallpaper to reload.
             draft.save(this);
@@ -839,12 +999,8 @@ public class MainActivity extends Activity {
     private void discardChanges() {
         executor.execute(() -> {
             WallpaperSettings live = WallpaperSettings.load(this);
-            File image = ImageStore.file(this);
-            if (image.length() > 0) {
-                ImageStore.copy(image, ImageStore.draftFile(this));
-            } else {
-                ImageStore.draftFile(this).delete();
-            }
+            ImageStore.copyWithMask(ImageStore.file(this), ImageStore.maskFile(this),
+                    ImageStore.draftFile(this), ImageStore.draftMaskFile(this));
             live.saveDraft(this);
             mainHandler.post(() -> {
                 if (isDestroyed()) {

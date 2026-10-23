@@ -27,6 +27,7 @@ final class WallpaperRenderer {
     private final float[] hsv = new float[3];
 
     private Bitmap image;
+    private Bitmap mask;
     private LivingImage living;
     private float[] accentHues = DEFAULT_HUES;
     private float time;
@@ -55,24 +56,31 @@ final class WallpaperRenderer {
         strokePaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
-    /** Takes ownership of the bitmap; the previous one is recycled. */
-    void setImage(Bitmap bitmap) {
+    /**
+     * Takes ownership of the image and its painted glow mask (may be null);
+     * the previous ones are recycled.
+     */
+    void setImage(Bitmap bitmap, Bitmap glowMask) {
         if (image != null && image != bitmap) {
             image.recycle();
+        }
+        if (mask != null && mask != glowMask) {
+            mask.recycle();
         }
         if (living != null) {
             living.release();
             living = null;
         }
         image = bitmap;
+        mask = glowMask;
         accentHues = bitmap != null ? ImageStore.accentHues(bitmap) : DEFAULT_HUES;
         if (bitmap != null) {
-            living = new LivingImage(bitmap, accentHues, WallpaperSettings.DEFAULT_COVERAGE);
+            living = new LivingImage(bitmap, mask, accentHues, WallpaperSettings.DEFAULT_COVERAGE);
         }
     }
 
     void release() {
-        setImage(null);
+        setImage(null, null);
     }
 
     /** Phone tilt from {@link TiltSensor}, -1..1 on each axis. */
@@ -105,7 +113,7 @@ final class WallpaperRenderer {
         if (living != null) {
             if (Math.abs(living.coverage() - s.glowCoverage) > 0.001f) {
                 living.release();
-                living = new LivingImage(image, accentHues, s.glowCoverage);
+                living = new LivingImage(image, mask, accentHues, s.glowCoverage);
             }
             // Particles sit "in front" of the picture, so they move further with parallax.
             living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,

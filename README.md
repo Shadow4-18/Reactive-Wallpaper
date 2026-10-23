@@ -16,6 +16,13 @@ music or video is playing on your phone.
   the bass and its second color follows the mids and highs.
 - **Idle animation:** the glow breathes, sparkles in the image's colors drift
   across it, and the picture sways slowly, so it stays alive even in silence.
+- **Paint where it glows:** brush over parts of the picture that should glow
+  (even dim ones, which glow in their own color) or shouldn't, with pinch to
+  zoom, undo and a live glow view. The painting belongs to the image and is
+  saved with looks.
+- **Lock screen look:** show a different saved look while the phone is locked.
+- **Export and import looks** as `.resona` files (settings plus image and
+  painted glow) to back them up or share them.
 - **Looks (presets):** save the current settings, optionally with the image,
   as a named look and switch between looks with one tap. Long-press a look to
   update, rename or delete it. Built-in starters: Neon glow, Halo ring, Club
