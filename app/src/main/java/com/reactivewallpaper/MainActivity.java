@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     private AudioController audio;
     private DemoAudioInput demo;
     private OutputRoute route;
+    private TiltSensor tilt;
     private TextView routeLabel;
     private boolean demoOn;
     private PreviewView preview;
@@ -94,6 +95,8 @@ public class MainActivity extends Activity {
 
         preview = findViewById(R.id.preview);
         preview.bind(renderer, analyzer, settings);
+        tilt = new TiltSensor(this);
+        preview.setTiltSensor(tilt);
         sizePreviewToScreen();
         loadPreviewImage();
 
@@ -147,13 +150,27 @@ public class MainActivity extends Activity {
         toggle(glow, "Swap which color follows the bass",
                 () -> s.swapGlowColors, v -> s.swapGlowColors = v);
 
+        LinearLayout recolor = section("Recolor", false);
+        slider(recolor, "Hue shift", 0f, 360f, () -> s.hueShift, v -> s.hueShift = v,
+                v -> Math.round(v) == 0 || Math.round(v) == 360 ? "Off" : "+" + Math.round(v) + "°");
+        slider(recolor, "Color cycle (keeps shifting)", 0f, 1f, () -> s.colorCycle, v -> s.colorCycle = v,
+                MainActivity::percent);
+        toggle(recolor, "Recolor the whole image, not just the glow",
+                () -> s.recolorImage, v -> s.recolorImage = v);
+
         LinearLayout idle = section("Idle animation (moves without sound)", true);
         slider(idle, "Breathing glow", 0f, 2f, () -> s.breathe, v -> s.breathe = v, MainActivity::percent);
         slider(idle, "Breathing speed", 0.25f, 3f, () -> s.breatheSpeed, v -> s.breatheSpeed = v, MainActivity::speed);
         slider(idle, "Sway", 0f, 2f, () -> s.sway, v -> s.sway = v, MainActivity::percent);
         slider(idle, "Sway speed", 0.25f, 3f, () -> s.swaySpeed, v -> s.swaySpeed = v, MainActivity::speed);
 
-        LinearLayout sparkles = section("Sparkles", false);
+        LinearLayout sparkles = section("Particles", false);
+        choiceColumn(sparkles, new String[] {"Sparkles (on the glowing spots)", "Embers (rising)",
+                        "Falling stars", "Bubbles", "Light streaks"},
+                new int[] {WallpaperSettings.PARTICLE_SPARKLES, WallpaperSettings.PARTICLE_EMBERS,
+                        WallpaperSettings.PARTICLE_STARS, WallpaperSettings.PARTICLE_BUBBLES,
+                        WallpaperSettings.PARTICLE_STREAKS},
+                s.particleStyle, v -> s.particleStyle = v);
         slider(sparkles, "Amount", 0f, 1f, () -> s.sparkleAmount, v -> s.sparkleAmount = v,
                 v -> Math.round(v * WallpaperSettings.MAX_SPARKLES) == 0
                         ? "Off" : String.valueOf(Math.round(v * WallpaperSettings.MAX_SPARKLES)));
@@ -162,6 +179,16 @@ public class MainActivity extends Activity {
         slider(sparkles, "Brightness", 0f, 2f, () -> s.sparkleBrightness, v -> s.sparkleBrightness = v,
                 MainActivity::percent);
         slider(sparkles, "Music reaction", 0f, 2f, () -> s.sparkleReact, v -> s.sparkleReact = v,
+                MainActivity::percent);
+
+        LinearLayout depth = section("Parallax (3D depth)", false);
+        slider(depth, "Tilt the phone", 0f, 2f, () -> s.tiltParallax, v -> {
+            s.tiltParallax = v;
+            if (v > 0f && resumed) {
+                tilt.start();
+            }
+        }, MainActivity::percent);
+        slider(depth, "Home-screen swipe", 0f, 2f, () -> s.swipeParallax, v -> s.swipeParallax = v,
                 MainActivity::percent);
 
         LinearLayout beat = section("Beat effects", false);
@@ -248,6 +275,19 @@ public class MainActivity extends Activity {
             restartAudio();
         });
 
+        LinearLayout battery = section("Battery", false);
+        label(battery, "Battery saver: lower frame rate and half the particles");
+        choice(battery, new String[] {"Off", "Auto", "Always"},
+                new int[] {WallpaperSettings.SAVER_OFF, WallpaperSettings.SAVER_AUTO, WallpaperSettings.SAVER_ALWAYS},
+                s.batterySaver, v -> s.batterySaver = v);
+        TextView saverHint = new TextView(this);
+        saverHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        saverHint.setTextColor(getColor(R.color.text_secondary));
+        saverHint.setText("Auto: when the phone is in battery saver or below 20% and not charging.");
+        battery.addView(saverHint);
+        slider(battery, "Sleep after silence", 0f, 30f, () -> s.sleepMinutes, v -> s.sleepMinutes = Math.round(v),
+                v -> Math.round(v) == 0 ? "Never" : Math.round(v) + " min");
+
         Button reset = new Button(this);
         reset.setText("Reset all effects to defaults");
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -274,6 +314,7 @@ public class MainActivity extends Activity {
         updatePermissionNote();
         // The wallpaper may have been set or changed while we were away.
         updateApplyState();
+        tilt.start();
         restartAudio();
         preview.setRunning(true);
     }
@@ -286,6 +327,7 @@ public class MainActivity extends Activity {
         audio.stop();
         demo.stop();
         route.stop();
+        tilt.stop();
     }
 
     @Override
@@ -770,13 +812,13 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Saves the editor's draft. Audio source and sync delays describe this phone
-     * and its headphones rather than the look, so those reach the wallpaper at once.
+     * Saves the editor's draft. Audio source, sync delays and battery options
+     * describe this phone rather than the look, so those reach the wallpaper at once.
      */
     private void saveDraft() {
         settings.saveDraft(this);
         WallpaperSettings live = WallpaperSettings.load(this);
-        if (live.copyAudioRoutingFrom(settings)) {
+        if (live.copyDeviceSettingsFrom(settings)) {
             live.save(this);
         }
         updateApplyState();
@@ -974,8 +1016,18 @@ public class MainActivity extends Activity {
     }
 
     private void choice(LinearLayout parent, String[] labels, int[] values, int current, IntSetter setter) {
+        choice(parent, labels, values, current, setter, true);
+    }
+
+    /** One option per line, for longer labels. */
+    private void choiceColumn(LinearLayout parent, String[] labels, int[] values, int current, IntSetter setter) {
+        choice(parent, labels, values, current, setter, false);
+    }
+
+    private void choice(LinearLayout parent, String[] labels, int[] values, int current, IntSetter setter,
+                        boolean horizontal) {
         RadioGroup group = new RadioGroup(this);
-        group.setOrientation(RadioGroup.HORIZONTAL);
+        group.setOrientation(horizontal ? RadioGroup.HORIZONTAL : RadioGroup.VERTICAL);
         int[] ids = new int[labels.length];
         for (int i = 0; i < labels.length; i++) {
             RadioButton button = new RadioButton(this);
@@ -985,7 +1037,9 @@ public class MainActivity extends Activity {
             button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
             button.setTextColor(getColor(R.color.text_primary));
             button.setMinHeight(dp(48));
-            group.addView(button, new RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            group.addView(button, horizontal
+                    ? new RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    : new RadioGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             if (values[i] == current) {
                 group.check(ids[i]);
             }

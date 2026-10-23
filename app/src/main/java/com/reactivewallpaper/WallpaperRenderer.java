@@ -3,6 +3,8 @@ package com.reactivewallpaper;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
@@ -31,6 +33,21 @@ final class WallpaperRenderer {
     private float swayPhase;
     private int gradientHeight = -1;
 
+    // Parallax inputs (-1..1) and their smoothed values.
+    private float tiltX;
+    private float tiltY;
+    private float swipe;
+    private float smoothTiltX;
+    private float smoothTiltY;
+    private float smoothSwipe;
+    private float parallaxX;
+    private float parallaxY;
+
+    private float cyclePhase;
+    private float appliedHue = Float.NaN;
+    private ColorMatrixColorFilter hueFilter;
+    private boolean saving;
+
     WallpaperRenderer(float density) {
         this.density = density;
         strokePaint.setStyle(Paint.Style.STROKE);
@@ -58,11 +75,31 @@ final class WallpaperRenderer {
         setImage(null);
     }
 
+    /** Phone tilt from {@link TiltSensor}, -1..1 on each axis. */
+    void setTilt(float x, float y) {
+        tiltX = x;
+        tiltY = y;
+    }
+
+    /** Home-screen position, -1 (first page) .. 1 (last page). */
+    void setSwipe(float position) {
+        swipe = position;
+    }
+
+    /** Battery saving: draws fewer particles. */
+    void setSaving(boolean saving) {
+        this.saving = saving;
+    }
+
     void draw(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s, float dt) {
         time += dt;
         swayPhase += dt * s.swaySpeed;
+        cyclePhase = (cyclePhase + dt * s.colorCycle * 30f) % 360f;
         float bass = audio.bass();
         float beat = audio.beat();
+        updateParallax(w, h, s, dt);
+        ColorMatrixColorFilter filter = hueFilter((s.hueShift + cyclePhase) % 360f);
+        imagePaint.setColorFilter(s.recolorImage ? filter : null);
 
         drawBackground(canvas, w, h, s, bass, beat);
         if (living != null) {
@@ -70,7 +107,9 @@ final class WallpaperRenderer {
                 living.release();
                 living = new LivingImage(image, accentHues, s.glowCoverage);
             }
-            living.draw(canvas, matrix, audio, s, dt, density);
+            // Particles sit "in front" of the picture, so they move further with parallax.
+            living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,
+                    filter, saving ? 0.5f : 1f);
         }
 
         if (s.flash > 0f && beat > 0.01f) {
@@ -85,7 +124,11 @@ final class WallpaperRenderer {
                 drawBars(canvas, w, h, audio.bands(), s);
                 break;
             case WallpaperSettings.STYLE_CIRCLE:
+                // The ring is lined up with artwork, so it moves with the picture.
+                canvas.save();
+                canvas.translate(parallaxX, parallaxY);
                 drawCircle(canvas, w, h, audio.bands(), s, bass);
+                canvas.restore();
                 break;
             case WallpaperSettings.STYLE_WAVE:
                 drawWave(canvas, w, h, audio.bands(), s);
@@ -107,6 +150,12 @@ final class WallpaperRenderer {
             zoom += s.sway * (0.03f + 0.012f * (float) Math.sin(swayPhase * 0.21f));
             dx += (float) Math.sin(swayPhase * 0.13f) * 5f * density * s.sway;
             dy += (float) Math.cos(swayPhase * 0.17f) * 5f * density * s.sway;
+        }
+        if (s.tiltParallax > 0f || s.swipeParallax > 0f) {
+            dx += parallaxX;
+            dy += parallaxY;
+            // Overscan so shifting never reveals the edges.
+            zoom += 0.05f * s.tiltParallax + 0.08f * s.swipeParallax;
         }
         if (s.shake > 0f) {
             float amount = 9f * density * s.shake * beat;
@@ -253,6 +302,39 @@ final class WallpaperRenderer {
         strokePaint.setShader(null);
     }
 
+    private void updateParallax(int w, int h, WallpaperSettings s, float dt) {
+        float follow = Math.min(1f, dt * 8f);
+        smoothTiltX += (tiltX - smoothTiltX) * follow;
+        smoothTiltY += (tiltY - smoothTiltY) * follow;
+        smoothSwipe += (swipe - smoothSwipe) * Math.min(1f, dt * 12f);
+        // The picture moves against the tilt, like looking through a window.
+        parallaxX = -(smoothTiltX * s.tiltParallax * 0.025f + smoothSwipe * s.swipeParallax * 0.04f) * w;
+        parallaxY = -smoothTiltY * s.tiltParallax * 0.025f * h;
+    }
+
+    /** A brightness-preserving hue rotation, cached while the angle holds still. */
+    private ColorMatrixColorFilter hueFilter(float degrees) {
+        if (degrees < 0.5f || degrees > 359.5f) {
+            appliedHue = Float.NaN;
+            hueFilter = null;
+            return null;
+        }
+        if (Math.abs(degrees - appliedHue) < 0.5f) {
+            return hueFilter;
+        }
+        double rad = Math.toRadians(degrees);
+        float c = (float) Math.cos(rad);
+        float n = (float) Math.sin(rad);
+        hueFilter = new ColorMatrixColorFilter(new ColorMatrix(new float[] {
+                0.213f + c * 0.787f - n * 0.213f, 0.715f - c * 0.715f - n * 0.715f, 0.072f - c * 0.072f + n * 0.928f, 0, 0,
+                0.213f - c * 0.213f + n * 0.143f, 0.715f + c * 0.285f + n * 0.140f, 0.072f - c * 0.072f - n * 0.283f, 0, 0,
+                0.213f - c * 0.213f - n * 0.787f, 0.715f - c * 0.715f + n * 0.715f, 0.072f + c * 0.928f + n * 0.072f, 0, 0,
+                0, 0, 0, 1, 0,
+        }));
+        appliedHue = degrees;
+        return hueFilter;
+    }
+
     /** Color for a position 0..1 across the spectrum. */
     private int colorAt(WallpaperSettings s, float position) {
         switch (s.colorMode) {
@@ -273,7 +355,7 @@ final class WallpaperRenderer {
                 if (delta > 180f) {
                     delta -= 360f;
                 }
-                hsv[0] = ((from + delta * position) % 360f + 360f) % 360f;
+                hsv[0] = ((from + delta * position + s.hueShift + cyclePhase) % 360f + 360f) % 360f;
                 hsv[1] = 0.75f;
                 hsv[2] = 1f;
                 return Color.HSVToColor(hsv);

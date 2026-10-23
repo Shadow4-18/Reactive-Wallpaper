@@ -25,7 +25,11 @@ music or video is playing on your phone.
   - Glow: bass glow, treble glow, beat flare, halo size, coverage (how much of
     the image glows), swap colors
   - Idle: breathing strength and speed, sway amount and speed
-  - Sparkles: amount, size, speed, brightness, music reaction
+  - Particles: sparkles, rising embers, falling stars, bubbles or light
+    streaks, with amount, size, speed, brightness, music reaction
+  - Recolor: hue shift, continuous color cycle, glow only or whole image
+  - Parallax: the picture shifts with phone tilt and home-screen swipes, with
+    particles in front for a sense of depth
   - Beat effects: pulse/zoom, flash, shake
   - Visualizer overlay (bars, ring, wave or none): height, opacity, bar count,
     ring position and size, colors
@@ -40,7 +44,9 @@ music or video is playing on your phone.
   **Discard** goes back to what the wallpaper shows. Sync delays and the audio
   source apply right away, since they describe your phone and headphones.
 - Battery-friendly: audio capture and drawing stop whenever the wallpaper isn't
-  visible.
+  visible. Battery saver (off, auto below 20% or in system battery saver, or
+  always) halves the frame rate and particles, and the wallpaper can sleep
+  after a chosen time without sound.
 
 ## Install
 

@@ -28,6 +28,16 @@ final class WallpaperSettings {
     static final int SOURCE_SYSTEM = 0;
     static final int SOURCE_MIC = 1;
 
+    static final int PARTICLE_SPARKLES = 0;
+    static final int PARTICLE_EMBERS = 1;
+    static final int PARTICLE_STARS = 2;
+    static final int PARTICLE_BUBBLES = 3;
+    static final int PARTICLE_STREAKS = 4;
+
+    static final int SAVER_OFF = 0;
+    static final int SAVER_AUTO = 1;
+    static final int SAVER_ALWAYS = 2;
+
     static final int MIN_BARS = 16;
     static final int MAX_BARS = 96;
     static final int MAX_SPARKLES = 200;
@@ -51,6 +61,19 @@ final class WallpaperSettings {
     float sparkleSpeed = 1f;
     float sparkleBrightness = 1f;
     float sparkleReact = 1f;
+    int particleStyle = PARTICLE_SPARKLES;
+
+    // Recolor.
+    /** 0 .. 360 degrees added to the glow's hues. */
+    float hueShift = 0f;
+    /** 0 .. 1: how fast the hue keeps turning on its own. */
+    float colorCycle = 0f;
+    /** Recolor the whole picture, not only the glow and effects. */
+    boolean recolorImage = false;
+
+    // Parallax.
+    float tiltParallax = 0.6f;
+    float swipeParallax = 0.5f;
 
     // Image motion.
     float pulse = 1f;
@@ -83,6 +106,11 @@ final class WallpaperSettings {
     int syncSpeakerMs = 60;
     int syncBluetoothMs = 220;
     int source = SOURCE_SYSTEM;
+
+    // Battery (a property of the phone, like sync).
+    int batterySaver = SAVER_AUTO;
+    /** Stop animating after this many minutes without sound; 0 = never. */
+    int sleepMinutes = 0;
 
     /** Bumped whenever a new image is chosen so running wallpapers reload it. */
     long imageVersion;
@@ -179,6 +207,12 @@ final class WallpaperSettings {
         s.sparkleSpeed = p.getFloat("sparkleSpeed", s.sparkleSpeed);
         s.sparkleBrightness = p.getFloat("sparkleBrightness", s.sparkleBrightness);
         s.sparkleReact = p.getFloat("sparkleReact", s.sparkleReact);
+        s.particleStyle = p.getInt("particleStyle", s.particleStyle);
+        s.hueShift = p.getFloat("hueShift", s.hueShift);
+        s.colorCycle = p.getFloat("colorCycle", s.colorCycle);
+        s.recolorImage = p.getBoolean("recolorImage", s.recolorImage);
+        s.tiltParallax = p.getFloat("tiltParallax", s.tiltParallax);
+        s.swipeParallax = p.getFloat("swipeParallax", s.swipeParallax);
 
         s.pulse = p.getFloat("pulseAmount", p.getBoolean("pulse", true) ? s.pulse : 0f);
         s.sway = p.getFloat("sway", oldAmbient ? s.sway : 0f);
@@ -201,6 +235,8 @@ final class WallpaperSettings {
         s.syncSpeakerMs = p.getInt("syncSpeakerMs", s.syncSpeakerMs);
         s.syncBluetoothMs = p.getInt("syncBluetoothMs", s.syncBluetoothMs);
         s.source = p.getInt("source", s.source);
+        s.batterySaver = p.getInt("batterySaver", s.batterySaver);
+        s.sleepMinutes = p.getInt("sleepMinutes", s.sleepMinutes);
         s.imageVersion = p.getLong("imageVersion", s.imageVersion);
         return s;
     }
@@ -254,6 +290,12 @@ final class WallpaperSettings {
         w.putFloat("sparkleSpeed", sparkleSpeed);
         w.putFloat("sparkleBrightness", sparkleBrightness);
         w.putFloat("sparkleReact", sparkleReact);
+        w.putInt("particleStyle", particleStyle);
+        w.putFloat("hueShift", hueShift);
+        w.putFloat("colorCycle", colorCycle);
+        w.putBoolean("recolorImage", recolorImage);
+        w.putFloat("tiltParallax", tiltParallax);
+        w.putFloat("swipeParallax", swipeParallax);
         w.putFloat("pulseAmount", pulse);
         w.putFloat("sway", sway);
         w.putFloat("swaySpeed", swaySpeed);
@@ -273,6 +315,8 @@ final class WallpaperSettings {
         w.putInt("syncSpeakerMs", syncSpeakerMs);
         w.putInt("syncBluetoothMs", syncBluetoothMs);
         w.putInt("source", source);
+        w.putInt("batterySaver", batterySaver);
+        w.putInt("sleepMinutes", sleepMinutes);
         w.putLong("imageVersion", imageVersion);
     }
 
@@ -282,22 +326,28 @@ final class WallpaperSettings {
     }
 
     /**
-     * Copies what belongs to this phone rather than to a look: the image in use,
-     * the audio source and the sync delays (a property of the headphones).
+     * Copies what belongs to this phone rather than to a look: the image in use
+     * plus the device settings (see {@link #copyDeviceSettingsFrom}).
      */
     WallpaperSettings keepDeviceSettingsFrom(WallpaperSettings current) {
         imageVersion = current.imageVersion;
-        copyAudioRoutingFrom(current);
+        copyDeviceSettingsFrom(current);
         return this;
     }
 
-    /** Copies the audio source and sync delays. Returns true if anything changed. */
-    boolean copyAudioRoutingFrom(WallpaperSettings other) {
+    /**
+     * Copies the audio source, sync delays (a property of the headphones) and
+     * battery options. Returns true if anything changed.
+     */
+    boolean copyDeviceSettingsFrom(WallpaperSettings other) {
         boolean changed = source != other.source || syncSpeakerMs != other.syncSpeakerMs
-                || syncBluetoothMs != other.syncBluetoothMs;
+                || syncBluetoothMs != other.syncBluetoothMs || batterySaver != other.batterySaver
+                || sleepMinutes != other.sleepMinutes;
         source = other.source;
         syncSpeakerMs = other.syncSpeakerMs;
         syncBluetoothMs = other.syncBluetoothMs;
+        batterySaver = other.batterySaver;
+        sleepMinutes = other.sleepMinutes;
         return changed;
     }
 

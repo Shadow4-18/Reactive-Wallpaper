@@ -19,6 +19,10 @@ public class ReactiveWallpaperService extends WallpaperService {
             implements SharedPreferences.OnSharedPreferenceChangeListener, Choreographer.FrameCallback {
         private static final long IDLE_FRAME_MS = 100;
         private static final long AMBIENT_FRAME_MS = 33;
+        private static final long SAVER_FRAME_MS = 33;
+        private static final long SAVER_AMBIENT_FRAME_MS = 66;
+        /** While asleep, only listen for sound to come back. */
+        private static final long SLEEP_CHECK_MS = 250;
 
         private Choreographer choreographer;
         private boolean frameScheduled;
@@ -26,6 +30,10 @@ public class ReactiveWallpaperService extends WallpaperService {
         private AudioAnalyzer analyzer;
         private AudioController audio;
         private OutputRoute route;
+        private TiltSensor tilt;
+        private PowerState power;
+        private long lastSoundTime;
+        private boolean asleep;
         private WallpaperRenderer renderer;
         private boolean visible;
         private int width;
@@ -45,6 +53,10 @@ public class ReactiveWallpaperService extends WallpaperService {
             settings.applyTo(analyzer, route.isBluetooth(), true);
             audio = new AudioController(ReactiveWallpaperService.this, analyzer);
             renderer = new WallpaperRenderer(getResources().getDisplayMetrics().density);
+            tilt = new TiltSensor(ReactiveWallpaperService.this);
+            power = new PowerState(ReactiveWallpaperService.this);
+            // Home-screen page changes arrive through onOffsetsChanged.
+            setOffsetNotificationsEnabled(true);
             WallpaperSettings.prefs(ReactiveWallpaperService.this)
                     .registerOnSharedPreferenceChangeListener(this);
         }
@@ -57,6 +69,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             stopFrames();
             audio.stop();
             route.stop();
+            tilt.stop();
             renderer.release();
         }
 
@@ -80,6 +93,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             stopFrames();
             audio.stop();
             route.stop();
+            tilt.stop();
         }
 
         @Override
@@ -89,12 +103,16 @@ public class ReactiveWallpaperService extends WallpaperService {
                 route.start();
                 settings.applyTo(analyzer, route.isBluetooth(), true);
                 audio.start(settings.source);
+                updateTilt();
                 lastFrame = 0;
+                lastSoundTime = SystemClock.uptimeMillis();
+                asleep = false;
                 scheduleFrame(0);
             } else {
                 stopFrames();
                 audio.stop();
                 route.stop();
+                tilt.stop();
             }
         }
 
@@ -105,7 +123,23 @@ public class ReactiveWallpaperService extends WallpaperService {
             loadImageIfNeeded();
             if (visible) {
                 audio.start(settings.source);
+                updateTilt();
                 scheduleFrame(0);
+            }
+        }
+
+        @Override
+        public void onOffsetsChanged(float xOffset, float yOffset, float xOffsetStep, float yOffsetStep,
+                                     int xPixelOffset, int yPixelOffset) {
+            // Launchers with a single page report 0.5 or 0; both mean "centered".
+            renderer.setSwipe(xOffsetStep > 0f && xOffsetStep < 1f ? xOffset * 2f - 1f : 0f);
+        }
+
+        private void updateTilt() {
+            if (settings.tiltParallax > 0f) {
+                tilt.start();
+            } else {
+                tilt.stop();
             }
         }
 
@@ -138,11 +172,40 @@ public class ReactiveWallpaperService extends WallpaperService {
             if (!visible) {
                 return;
             }
+            long now = SystemClock.uptimeMillis();
+            boolean saving = power.shouldSave(settings.batterySaver);
+            renderer.setSaving(saving);
+
+            if (asleep) {
+                // Keep the last frame on screen and just check whether sound is back.
+                analyzer.update(SLEEP_CHECK_MS / 1000f);
+                if (analyzer.isIdle()) {
+                    scheduleFrame(SLEEP_CHECK_MS);
+                    return;
+                }
+                asleep = false;
+                lastFrame = 0;
+            }
+
             drawFrame();
-            long delay = 0;
-            if (analyzer.isIdle()) {
-                boolean animated = settings.breathe > 0f || settings.sparkleAmount > 0f || settings.sway > 0f;
-                delay = animated ? AMBIENT_FRAME_MS : IDLE_FRAME_MS;
+            boolean idle = analyzer.isIdle();
+            if (!idle) {
+                lastSoundTime = now;
+            } else if (settings.sleepMinutes > 0 && now - lastSoundTime > settings.sleepMinutes * 60_000L) {
+                asleep = true;
+                scheduleFrame(SLEEP_CHECK_MS);
+                return;
+            }
+
+            long delay = saving ? SAVER_FRAME_MS : 0;
+            if (idle) {
+                boolean animated = settings.breathe > 0f || settings.sparkleAmount > 0f || settings.sway > 0f
+                        || settings.colorCycle > 0f || settings.tiltParallax > 0f;
+                if (animated) {
+                    delay = saving ? SAVER_AMBIENT_FRAME_MS : AMBIENT_FRAME_MS;
+                } else {
+                    delay = IDLE_FRAME_MS;
+                }
             }
             scheduleFrame(delay);
         }
@@ -152,6 +215,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             float dt = lastFrame == 0 ? 1f / 60f : Math.min(0.1f, (now - lastFrame) / 1000f);
             lastFrame = now;
             analyzer.update(dt);
+            renderer.setTilt(tilt.x(), tilt.y());
 
             SurfaceHolder holder = getSurfaceHolder();
             Canvas canvas = null;

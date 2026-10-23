@@ -15,6 +15,7 @@ public final class PreviewView extends View {
     private WallpaperSettings settings;
     private long lastFrame;
     private boolean running;
+    private TiltSensor tilt;
 
     public PreviewView(Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -33,6 +34,10 @@ public final class PreviewView extends View {
         this.analyzer = analyzer;
         this.settings = settings;
         invalidate();
+    }
+
+    void setTiltSensor(TiltSensor tilt) {
+        this.tilt = tilt;
     }
 
     void setSettings(WallpaperSettings settings) {
@@ -55,6 +60,9 @@ public final class PreviewView extends View {
         float dt = lastFrame == 0 ? 1f / 60f : Math.min(0.1f, (now - lastFrame) / 1000f);
         lastFrame = now;
         analyzer.update(dt);
+        if (tilt != null) {
+            renderer.setTilt(tilt.x(), tilt.y());
+        }
         renderer.draw(canvas, getWidth(), getHeight(), analyzer, settings, dt);
         if (running) {
             postInvalidateOnAnimation();
