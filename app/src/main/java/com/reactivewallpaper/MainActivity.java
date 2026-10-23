@@ -37,6 +37,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -61,6 +62,8 @@ public class MainActivity extends Activity {
     private boolean demoOn;
     private PreviewView preview;
     private TextView permissionNote;
+    private Button setWallpaper;
+    private View applyStatus;
     private LinearLayout controls;
     private View circleOptions;
     private View hueOption;
@@ -73,7 +76,8 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        settings = WallpaperSettings.load(this);
+        // The editor works on a draft; the wallpaper only changes when it's applied.
+        settings = WallpaperSettings.loadDraft(this);
         analyzer = new AudioAnalyzer(settings.barCount);
         route = new OutputRoute(this, bluetooth -> applyAudioSettings());
         applyAudioSettings();
@@ -96,7 +100,10 @@ public class MainActivity extends Activity {
         permissionNote = findViewById(R.id.permission_note);
         permissionNote.setOnClickListener(v -> requestAudioPermission());
         findViewById(R.id.choose_image).setOnClickListener(v -> chooseImage());
-        findViewById(R.id.set_wallpaper).setOnClickListener(v -> applyWallpaper());
+        setWallpaper = findViewById(R.id.set_wallpaper);
+        setWallpaper.setOnClickListener(v -> applyWallpaper());
+        applyStatus = findViewById(R.id.apply_status);
+        findViewById(R.id.discard).setOnClickListener(v -> discardChanges());
 
         controls = findViewById(R.id.controls);
         buildControls();
@@ -249,7 +256,7 @@ public class MainActivity extends Activity {
         controls.addView(reset, lp);
         reset.setOnClickListener(v -> {
             settings = settings.resetEffects();
-            settings.save(this);
+            saveDraft();
             applyAudioSettings();
             preview.setSettings(settings);
             buildControls();
@@ -265,6 +272,8 @@ public class MainActivity extends Activity {
         route.start();
         applyAudioSettings();
         updatePermissionNote();
+        // The wallpaper may have been set or changed while we were away.
+        updateApplyState();
         restartAudio();
         preview.setRunning(true);
     }
@@ -373,7 +382,8 @@ public class MainActivity extends Activity {
                 if (preset.hasImage) {
                     loadPreviewImage();
                 }
-                Toast.makeText(this, "Applied “" + preset.name + "”", Toast.LENGTH_SHORT).show();
+                updateApplyState();
+                Toast.makeText(this, "Loaded “" + preset.name + "”", Toast.LENGTH_SHORT).show();
             });
         });
     }
@@ -390,7 +400,7 @@ public class MainActivity extends Activity {
         box.addView(name);
         CheckBox includeImage = new CheckBox(this);
         includeImage.setText("Include the current image");
-        boolean hasImage = ImageStore.hasImage(this);
+        boolean hasImage = ImageStore.hasDraftImage(this);
         includeImage.setChecked(hasImage);
         includeImage.setEnabled(hasImage);
         box.addView(includeImage);
@@ -534,7 +544,7 @@ public class MainActivity extends Activity {
                     } else {
                         settings.syncSpeakerMs = measured[0];
                     }
-                    settings.save(this);
+                    saveDraft();
                     applyAudioSettings();
                     buildControls();
                     dialog.dismiss();
@@ -626,7 +636,7 @@ public class MainActivity extends Activity {
         int w = dm.widthPixels / 2;
         int h = dm.heightPixels / 2;
         executor.execute(() -> {
-            Bitmap bitmap = ImageStore.load(this, w, h);
+            Bitmap bitmap = ImageStore.load(ImageStore.draftFile(this), w, h);
             mainHandler.post(() -> {
                 if (isDestroyed()) {
                     if (bitmap != null) {
@@ -669,20 +679,55 @@ public class MainActivity extends Activity {
                     return;
                 }
                 settings.imageVersion = System.currentTimeMillis();
-                settings.save(this);
+                saveDraft();
                 loadPreviewImage();
             });
         });
     }
 
-    private void applyWallpaper() {
-        settings.save(this);
-        ComponentName component = new ComponentName(this, ReactiveWallpaperService.class);
+    private boolean isOurWallpaperActive() {
         WallpaperInfo current = WallpaperManager.getInstance(this).getWallpaperInfo();
-        if (current != null && component.equals(current.getComponent())) {
-            Toast.makeText(this, R.string.already_active, Toast.LENGTH_LONG).show();
+        return current != null
+                && new ComponentName(this, ReactiveWallpaperService.class).equals(current.getComponent());
+    }
+
+    /** Copies the draft (settings and image) to the live wallpaper, then runs {@code then}. */
+    private void publish(Runnable then) {
+        WallpaperSettings draft = settings.copy();
+        executor.execute(() -> {
+            WallpaperSettings live = WallpaperSettings.load(this);
+            if (draft.imageVersion != live.imageVersion) {
+                File image = ImageStore.draftFile(this);
+                if (image.length() > 0) {
+                    ImageStore.copy(image, ImageStore.file(this));
+                } else {
+                    ImageStore.file(this).delete();
+                }
+            }
+            // Saved after the image is in place, since saving is what tells the wallpaper to reload.
+            draft.save(this);
+            mainHandler.post(() -> {
+                if (!isDestroyed()) {
+                    then.run();
+                }
+            });
+        });
+    }
+
+    private void applyWallpaper() {
+        if (isOurWallpaperActive()) {
+            publish(() -> {
+                updateApplyState();
+                Toast.makeText(this, R.string.applied_toast, Toast.LENGTH_SHORT).show();
+            });
             return;
         }
+        // The system preview screen shows the live settings, so publish before opening it.
+        publish(this::openWallpaperPicker);
+    }
+
+    private void openWallpaperPicker() {
+        ComponentName component = new ComponentName(this, ReactiveWallpaperService.class);
         Intent intent = new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER);
         intent.putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, component);
         try {
@@ -720,8 +765,57 @@ public class MainActivity extends Activity {
     }
 
     private void changed() {
-        settings.save(this);
+        saveDraft();
         preview.setSettings(settings);
+    }
+
+    /**
+     * Saves the editor's draft. Audio source and sync delays describe this phone
+     * and its headphones rather than the look, so those reach the wallpaper at once.
+     */
+    private void saveDraft() {
+        settings.saveDraft(this);
+        WallpaperSettings live = WallpaperSettings.load(this);
+        if (live.copyAudioRoutingFrom(settings)) {
+            live.save(this);
+        }
+        updateApplyState();
+    }
+
+    private void updateApplyState() {
+        boolean active = isOurWallpaperActive();
+        boolean pending = !settings.sameAs(WallpaperSettings.load(this));
+        if (!active) {
+            setWallpaper.setText(R.string.set_wallpaper);
+        } else {
+            setWallpaper.setText(pending ? R.string.apply_changes : R.string.applied);
+        }
+        applyStatus.setVisibility(active && pending ? View.VISIBLE : View.GONE);
+    }
+
+    /** Throws away the draft and goes back to what the wallpaper is showing. */
+    private void discardChanges() {
+        executor.execute(() -> {
+            WallpaperSettings live = WallpaperSettings.load(this);
+            File image = ImageStore.file(this);
+            if (image.length() > 0) {
+                ImageStore.copy(image, ImageStore.draftFile(this));
+            } else {
+                ImageStore.draftFile(this).delete();
+            }
+            live.saveDraft(this);
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                settings = live;
+                applyAudioSettings();
+                preview.setSettings(settings);
+                buildControls();
+                loadPreviewImage();
+                updateApplyState();
+            });
+        });
     }
 
     // ---- Control builders -------------------------------------------------

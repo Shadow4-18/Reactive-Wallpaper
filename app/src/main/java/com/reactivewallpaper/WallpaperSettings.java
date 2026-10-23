@@ -3,13 +3,18 @@ package com.reactivewallpaper;
 import android.content.Context;
 import android.content.SharedPreferences;
 
+import java.util.HashMap;
+import java.util.Map;
+
 /**
- * User choices, shared between the editor screen and the live wallpaper.
+ * User choices. Two copies are kept: the live one the wallpaper draws from, and
+ * the editor's draft, which only reaches the wallpaper when the user applies it.
  * Effect amounts are multipliers where 0 turns the effect off and 1 is the
  * default look.
  */
 final class WallpaperSettings {
     static final String PREFS_NAME = "wallpaper_settings";
+    static final String DRAFT_PREFS_NAME = "editor_settings";
 
     static final int STYLE_NONE = 0;
     static final int STYLE_BARS = 1;
@@ -107,8 +112,29 @@ final class WallpaperSettings {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
 
+    /** The settings the wallpaper is showing. */
     static WallpaperSettings load(Context context) {
-        SharedPreferences p = prefs(context);
+        return load(prefs(context));
+    }
+
+    /**
+     * The editor's working copy. Starts as a copy of the live settings and image
+     * the first time it is needed.
+     */
+    static WallpaperSettings loadDraft(Context context) {
+        SharedPreferences draft = context.getSharedPreferences(DRAFT_PREFS_NAME, Context.MODE_PRIVATE);
+        if (!draft.contains("imageVersion")) {
+            WallpaperSettings live = load(context);
+            if (ImageStore.hasImage(context)) {
+                ImageStore.copy(ImageStore.file(context), ImageStore.draftFile(context));
+            }
+            live.saveDraft(context);
+            return live;
+        }
+        return load(draft);
+    }
+
+    private static WallpaperSettings load(SharedPreferences p) {
         return read(new Reader() {
             @Override
             public float getFloat(String key, float def) {
@@ -179,8 +205,17 @@ final class WallpaperSettings {
         return s;
     }
 
+    /** Makes these the settings the wallpaper shows. */
     void save(Context context) {
-        SharedPreferences.Editor editor = prefs(context).edit();
+        save(prefs(context));
+    }
+
+    void saveDraft(Context context) {
+        save(context.getSharedPreferences(DRAFT_PREFS_NAME, Context.MODE_PRIVATE));
+    }
+
+    private void save(SharedPreferences prefs) {
+        SharedPreferences.Editor editor = prefs.edit();
         write(new Writer() {
             @Override
             public void putFloat(String key, float value) {
@@ -252,10 +287,79 @@ final class WallpaperSettings {
      */
     WallpaperSettings keepDeviceSettingsFrom(WallpaperSettings current) {
         imageVersion = current.imageVersion;
-        source = current.source;
-        syncSpeakerMs = current.syncSpeakerMs;
-        syncBluetoothMs = current.syncBluetoothMs;
+        copyAudioRoutingFrom(current);
         return this;
+    }
+
+    /** Copies the audio source and sync delays. Returns true if anything changed. */
+    boolean copyAudioRoutingFrom(WallpaperSettings other) {
+        boolean changed = source != other.source || syncSpeakerMs != other.syncSpeakerMs
+                || syncBluetoothMs != other.syncBluetoothMs;
+        source = other.source;
+        syncSpeakerMs = other.syncSpeakerMs;
+        syncBluetoothMs = other.syncBluetoothMs;
+        return changed;
+    }
+
+    private Map<String, Object> toMap() {
+        Map<String, Object> map = new HashMap<>();
+        write(new Writer() {
+            @Override
+            public void putFloat(String key, float value) {
+                map.put(key, value);
+            }
+
+            @Override
+            public void putInt(String key, int value) {
+                map.put(key, value);
+            }
+
+            @Override
+            public void putBoolean(String key, boolean value) {
+                map.put(key, value);
+            }
+
+            @Override
+            public void putLong(String key, long value) {
+                map.put(key, value);
+            }
+        });
+        return map;
+    }
+
+    /** True if every setting (including which image) matches. */
+    boolean sameAs(WallpaperSettings other) {
+        return toMap().equals(other.toMap());
+    }
+
+    /** An independent copy, safe to hand to a background thread. */
+    WallpaperSettings copy() {
+        Map<String, Object> map = toMap();
+        return read(new Reader() {
+            @Override
+            public float getFloat(String key, float def) {
+                Object v = map.get(key);
+                return v instanceof Float ? (Float) v : def;
+            }
+
+            @Override
+            public int getInt(String key, int def) {
+                Object v = map.get(key);
+                return v instanceof Integer ? (Integer) v : def;
+            }
+
+            @Override
+            public boolean getBoolean(String key, boolean def) {
+                Object v = map.get(key);
+                return v instanceof Boolean ? (Boolean) v : def;
+            }
+
+            @Override
+            public long getLong(String key, long def) {
+                Object v = map.get(key);
+                return v instanceof Long ? (Long) v : def;
+            }
+        });
     }
 
     /** Applies the audio tuning to an analyzer for the current output route. */

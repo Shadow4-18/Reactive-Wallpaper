@@ -49,8 +49,8 @@ final class PresetStore {
     /** Saves the current look. Call off the main thread when including the image. */
     static Preset save(Context context, String name, WallpaperSettings settings, boolean includeImage) {
         String id = UUID.randomUUID().toString();
-        boolean hasImage = includeImage && ImageStore.hasImage(context)
-                && ImageStore.copy(ImageStore.file(context), imageFile(context, id));
+        boolean hasImage = includeImage && ImageStore.hasDraftImage(context)
+                && ImageStore.copy(ImageStore.draftFile(context), imageFile(context, id));
         Preset preset = new Preset(id, name, false, hasImage, toJson(settings));
         List<Preset> list = userPresets(context);
         list.add(preset);
@@ -60,8 +60,8 @@ final class PresetStore {
 
     /** Replaces a saved look's settings (and image, if it has one) with the current ones. */
     static void update(Context context, Preset preset, WallpaperSettings settings) {
-        if (preset.hasImage && ImageStore.hasImage(context)) {
-            ImageStore.copy(ImageStore.file(context), imageFile(context, preset.id));
+        if (preset.hasImage && ImageStore.hasDraftImage(context)) {
+            ImageStore.copy(ImageStore.draftFile(context), imageFile(context, preset.id));
         }
         replace(context, preset, new Preset(preset.id, preset.name, false, preset.hasImage, toJson(settings)));
     }
@@ -78,16 +78,16 @@ final class PresetStore {
     }
 
     /**
-     * Makes the look current: its image (if any) becomes the wallpaper image and
-     * its settings are applied, keeping this phone's sync and audio source.
-     * Call off the main thread.
+     * Loads the look into the editor: its image (if any) and settings become the
+     * draft, keeping this phone's sync and audio source. The wallpaper itself
+     * changes only when the user applies. Call off the main thread.
      */
     static WallpaperSettings apply(Context context, Preset preset, WallpaperSettings current) {
         WallpaperSettings next = fromJson(preset.look).keepDeviceSettingsFrom(current);
-        if (preset.hasImage && ImageStore.copy(imageFile(context, preset.id), ImageStore.file(context))) {
+        if (preset.hasImage && ImageStore.copy(imageFile(context, preset.id), ImageStore.draftFile(context))) {
             next.imageVersion = System.currentTimeMillis();
         }
-        next.save(context);
+        next.saveDraft(context);
         return next;
     }
 

@@ -20,11 +20,18 @@ import java.io.OutputStream;
 final class ImageStore {
     private static final String TAG = "ImageStore";
     private static final String FILE_NAME = "wallpaper_image";
+    private static final String DRAFT_FILE_NAME = "editor_image";
 
     private ImageStore() {}
 
+    /** The image the wallpaper shows. */
     static File file(Context context) {
         return new File(context.getFilesDir(), FILE_NAME);
+    }
+
+    /** The image being edited, which reaches the wallpaper only when applied. */
+    static File draftFile(Context context) {
+        return new File(context.getFilesDir(), DRAFT_FILE_NAME);
     }
 
     /** Copies one image file to another, via a temp file so a reader never sees half a file. */
@@ -49,10 +56,14 @@ final class ImageStore {
         return file(context).length() > 0;
     }
 
-    /** Copies the picked image into app storage. Call off the main thread. */
+    static boolean hasDraftImage(Context context) {
+        return draftFile(context).length() > 0;
+    }
+
+    /** Copies the picked image into the editor's draft. Call off the main thread. */
     static boolean importImage(Context context, Uri uri) {
-        File target = file(context);
-        File temp = new File(context.getFilesDir(), FILE_NAME + ".tmp");
+        File target = draftFile(context);
+        File temp = new File(context.getFilesDir(), DRAFT_FILE_NAME + ".tmp");
         try (InputStream in = context.getContentResolver().openInputStream(uri);
              OutputStream out = new FileOutputStream(temp)) {
             if (in == null) {

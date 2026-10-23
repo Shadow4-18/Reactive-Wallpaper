@@ -35,7 +35,10 @@ music or video is playing on your phone.
     sound is playing
 - The preview stays on screen while you adjust. **Demo beat** lets you tune
   without playing music, and there's a one-tap reset to defaults.
-- Changes apply instantly to the running wallpaper.
+- Edits are a draft: picking an image, moving sliders or loading a look only
+  changes the preview. **Apply changes** puts them on your wallpaper, and
+  **Discard** goes back to what the wallpaper shows. Sync delays and the audio
+  source apply right away, since they describe your phone and headphones.
 - Battery-friendly: audio capture and drawing stop whenever the wallpaper isn't
   visible.
 
@@ -50,7 +53,8 @@ music or video is playing on your phone.
 2. Copy the APK to your phone and open it. Allow "install unknown apps" for your
    browser or file manager when Android asks.
 3. Open **Resona**, allow audio access, choose an image, adjust it,
-   and tap **Set as wallpaper**.
+   and tap **Set as wallpaper**. Later edits stay in the editor until you tap
+   **Apply changes**.
 
 To switch from your old sound-reactive wallpaper, tap **Set as wallpaper**. It
 replaces whatever live wallpaper is active.
