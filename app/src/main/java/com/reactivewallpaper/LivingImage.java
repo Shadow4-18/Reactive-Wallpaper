@@ -19,7 +19,6 @@ import java.util.Random;
  */
 final class LivingImage {
     private static final int MAX_SPAWN_POINTS = 4000;
-    private static final int PARTICLE_COUNT = WallpaperSettings.MAX_SPARKLES;
     /** Glow can stack up to this many times a layer's own brightness. */
     private static final float MAX_LAYER_AMOUNT = 4f;
 
@@ -29,30 +28,10 @@ final class LivingImage {
     private final int imageHeight;
     private final float coverage;
 
-    // Where sparkles may appear (normalized image coords) and their colors.
-    private final float[] spawnU;
-    private final float[] spawnV;
-    private final int[] spawnColor;
-    private final int spawnCount;
-
-    private final float[] pu = new float[PARTICLE_COUNT];
-    private final float[] pv = new float[PARTICLE_COUNT];
-    private final float[] pDrift = new float[PARTICLE_COUNT];
-    private final float[] pLife = new float[PARTICLE_COUNT];
-    private final float[] pMaxLife = new float[PARTICLE_COUNT];
-    private final float[] pSize = new float[PARTICLE_COUNT];
-    private final float[] pPhase = new float[PARTICLE_COUNT];
-    private final float[] pVu = new float[PARTICLE_COUNT];
-    private final float[] pVv = new float[PARTICLE_COUNT];
-    private final int[] pColor = new int[PARTICLE_COUNT];
-    private int particleStyle = -1;
-
     private final Random random = new Random();
+    private final ParticleSystem particles;
     private final Paint addPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
-    private final Paint addStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Matrix layerMatrix = new Matrix();
-    private final float[] point = new float[2];
-    private float time;
     private float breathePhase;
 
     /** Mask value meaning "let the app decide" (painted masks store 0 = no glow, 255 = glow). */
@@ -72,9 +51,6 @@ final class LivingImage {
         imageHeight = image.getHeight();
         this.coverage = coverage;
         addPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
-        addStroke.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.ADD));
-        addStroke.setStyle(Paint.Style.STROKE);
-        addStroke.setStrokeCap(Paint.Cap.ROUND);
 
         int w = Math.max(1, imageWidth / 2);
         int h = Math.max(1, imageHeight / 2);
@@ -99,10 +75,7 @@ final class LivingImage {
             candidates[0] = n + 1;
         });
         int candidateCount = candidates[0];
-        spawnCount = Math.min(candidateCount, MAX_SPAWN_POINTS);
-        spawnU = tmpU;
-        spawnV = tmpV;
-        spawnColor = tmpColor;
+        particles = new ParticleSystem(tmpU, tmpV, tmpColor, Math.min(candidateCount, MAX_SPAWN_POINTS), hues);
 
         int[][] groups = {groupA, groupB};
         for (int g = 0; g < 2; g++) {
@@ -231,6 +204,7 @@ final class LivingImage {
                 }
             }
         }
+        particles.release();
     }
 
     /**
@@ -243,13 +217,11 @@ final class LivingImage {
     void draw(Canvas canvas, Matrix imageMatrix, AudioAnalyzer audio, WallpaperSettings s,
               float dt, float density, float particleDx, float particleDy,
               ColorFilter colorFilter, float particleScale, boolean drawGlow) {
-        time += dt;
         breathePhase += dt * s.breatheSpeed;
         float bass = audio.bass();
         float beat = audio.beat();
         float high = audio.high();
         addPaint.setColorFilter(colorFilter);
-        addStroke.setColorFilter(colorFilter);
 
         float idleA = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 1.1f));
         float idleB = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 0.9f + 2.1f));
@@ -261,20 +233,13 @@ final class LivingImage {
             drawGroup(canvas, imageMatrix, 1 - bassGroup, highAmount, s.bloom);
         }
 
-        int particles = Math.round(s.sparkleAmount * PARTICLE_COUNT * particleScale);
-        if (particles > 0 && spawnCount > 0) {
-            if (s.particleStyle != particleStyle) {
-                particleStyle = s.particleStyle;
-                for (int i = 0; i < PARTICLE_COUNT; i++) {
-                    respawn(i);
-                    pLife[i] = random.nextFloat() * pMaxLife[i];
-                }
-            }
-            drawParticles(canvas, imageMatrix, particles, dt, density, bass, beat, audio.level(), s,
-                    particleDx, particleDy);
-        }
         addPaint.setColorFilter(null);
-        addStroke.setColorFilter(null);
+
+        int count = Math.round(s.sparkleAmount * ParticleSystem.MAX * particleScale);
+        if (count > 0) {
+            particles.draw(canvas, imageMatrix, imageWidth, imageHeight, count, dt, density, audio, s,
+                    particleDx, particleDy, colorFilter);
+        }
     }
 
     private void drawGroup(Canvas canvas, Matrix imageMatrix, int group, float amount, float bloom) {
@@ -295,170 +260,6 @@ final class LivingImage {
             canvas.drawBitmap(b, layerMatrix, addPaint);
             amount -= 1f;
         }
-    }
-
-    private void drawParticles(Canvas canvas, Matrix imageMatrix, int count, float dt, float density,
-                               float bass, float beat, float level, WallpaperSettings s,
-                               float offsetX, float offsetY) {
-        float react = s.sparkleReact;
-        float energy = react * (4f * level + 2f * beat);
-        float speed = s.sparkleSpeed * (1f + energy);
-        if (particleStyle == WallpaperSettings.PARTICLE_STARS) {
-            // Streaking stars are big and fast; fewer at once reads better.
-            count = Math.max(1, count / 4);
-        }
-        for (int i = 0; i < count; i++) {
-            pLife[i] += dt * s.sparkleSpeed * (1f + react * level);
-            if (pLife[i] >= pMaxLife[i]) {
-                respawn(i);
-            }
-            float wobble = (float) Math.sin(time * 0.7f + pPhase[i]) * pDrift[i];
-            switch (particleStyle) {
-                case WallpaperSettings.PARTICLE_EMBERS:
-                    pu[i] += dt * (pVu[i] + 0.02f * wobble) * speed;
-                    break;
-                case WallpaperSettings.PARTICLE_BUBBLES:
-                    pu[i] += dt * 0.01f * (float) Math.sin(time * 2f + pPhase[i]) * speed;
-                    break;
-                case WallpaperSettings.PARTICLE_SPARKLES:
-                    pu[i] += dt * 0.006f * wobble * speed;
-                    break;
-                default:
-                    pu[i] += dt * pVu[i] * speed;
-                    break;
-            }
-            pv[i] += dt * pVv[i] * speed;
-
-            float life = pLife[i] / pMaxLife[i];
-            float fade = (float) Math.sin(Math.PI * life);
-            float flicker;
-            if (particleStyle == WallpaperSettings.PARTICLE_EMBERS) {
-                flicker = 0.55f + 0.45f * (float) Math.sin(time * 11f + pPhase[i] * 7f);
-            } else if (particleStyle == WallpaperSettings.PARTICLE_SPARKLES) {
-                flicker = 0.6f + 0.4f * (float) Math.sin(time * 3f + pPhase[i] * 5f);
-            } else {
-                flicker = 1f;
-            }
-            float alpha = Math.min(1f, fade * flicker * s.sparkleBrightness
-                    * (0.6f + react * (0.8f * level + 0.6f * beat)));
-            if (alpha <= 0.01f) {
-                continue;
-            }
-            point[0] = pu[i] * imageWidth;
-            point[1] = pv[i] * imageHeight;
-            imageMatrix.mapPoints(point);
-            float x = point[0] + offsetX;
-            float y = point[1] + offsetY;
-            float size = pSize[i] * s.sparkleSize * density * (1f + react * (0.8f * bass + 0.6f * beat));
-            addPaint.setColor(pColor[i]);
-            addStroke.setColor(pColor[i]);
-
-            switch (particleStyle) {
-                case WallpaperSettings.PARTICLE_STARS:
-                case WallpaperSettings.PARTICLE_STREAKS: {
-                    // A line trailing behind the direction of travel, brightest at the head.
-                    float trail = (particleStyle == WallpaperSettings.PARTICLE_STARS ? 0.5f : 0.9f) * speed;
-                    float tx = x - pVu[i] * imageWidth * trail * scaleOf(imageMatrix);
-                    float ty = y - pVv[i] * imageHeight * trail * scaleOf(imageMatrix);
-                    addStroke.setStrokeWidth(size * 2.4f);
-                    addStroke.setAlpha((int) (alpha * 50));
-                    canvas.drawLine(tx, ty, x, y, addStroke);
-                    addStroke.setStrokeWidth(size * 0.8f);
-                    addStroke.setAlpha((int) (alpha * 220));
-                    canvas.drawLine(tx, ty, x, y, addStroke);
-                    addPaint.setAlpha((int) (alpha * 255));
-                    canvas.drawCircle(x, y, size, addPaint);
-                    break;
-                }
-                case WallpaperSettings.PARTICLE_BUBBLES: {
-                    float radius = size * 4f;
-                    addStroke.setStrokeWidth(Math.max(1f, size * 0.6f));
-                    addStroke.setAlpha((int) (alpha * 170));
-                    canvas.drawCircle(x, y, radius, addStroke);
-                    addPaint.setAlpha((int) (alpha * 200));
-                    canvas.drawCircle(x - radius * 0.35f, y - radius * 0.35f, size * 0.7f, addPaint);
-                    break;
-                }
-                default: {
-                    addPaint.setAlpha((int) (alpha * 70));
-                    canvas.drawCircle(x, y, size * 3.5f, addPaint);
-                    addPaint.setAlpha((int) (alpha * 255));
-                    canvas.drawCircle(x, y, size, addPaint);
-                    break;
-                }
-            }
-        }
-    }
-
-    private final float[] matrixValues = new float[9];
-
-    private float scaleOf(Matrix m) {
-        m.getValues(matrixValues);
-        return matrixValues[Matrix.MSCALE_X];
-    }
-
-    /** Starts particle i again, with position and motion suited to the current style. */
-    private void respawn(int i) {
-        int k = random.nextInt(spawnCount);
-        pColor[i] = brighten(spawnColor[k]);
-        pDrift[i] = 0.5f + random.nextFloat();
-        pLife[i] = 0f;
-        pPhase[i] = random.nextFloat() * 6.283f;
-        switch (particleStyle) {
-            case WallpaperSettings.PARTICLE_EMBERS:
-                // Rise from the bottom, a bit faster than sparkles.
-                pu[i] = random.nextFloat();
-                pv[i] = 0.75f + random.nextFloat() * 0.3f;
-                pVu[i] = (random.nextFloat() - 0.5f) * 0.01f;
-                pVv[i] = -(0.035f + random.nextFloat() * 0.03f);
-                pMaxLife[i] = 3f + random.nextFloat() * 3f;
-                pSize[i] = 0.6f + random.nextFloat() * 1.0f;
-                break;
-            case WallpaperSettings.PARTICLE_STARS:
-                // Shoot diagonally down across the upper part of the picture.
-                pu[i] = random.nextFloat() * 1.1f - 0.1f;
-                pv[i] = random.nextFloat() * 0.55f - 0.05f;
-                pVu[i] = 0.12f + random.nextFloat() * 0.08f;
-                pVv[i] = 0.06f + random.nextFloat() * 0.05f;
-                pMaxLife[i] = 0.7f + random.nextFloat() * 0.9f;
-                pSize[i] = 0.9f + random.nextFloat() * 1.0f;
-                pColor[i] = whiter(pColor[i]);
-                break;
-            case WallpaperSettings.PARTICLE_BUBBLES:
-                pu[i] = random.nextFloat();
-                pv[i] = 0.85f + random.nextFloat() * 0.25f;
-                pVu[i] = 0f;
-                pVv[i] = -(0.015f + random.nextFloat() * 0.02f);
-                pMaxLife[i] = 6f + random.nextFloat() * 5f;
-                pSize[i] = 0.8f + random.nextFloat() * 2.2f;
-                break;
-            case WallpaperSettings.PARTICLE_STREAKS:
-                // Fast horizontal light streaks, either direction.
-                pu[i] = random.nextFloat();
-                pv[i] = 0.1f + random.nextFloat() * 0.8f;
-                pVu[i] = (random.nextBoolean() ? 1f : -1f) * (0.1f + random.nextFloat() * 0.12f);
-                pVv[i] = 0f;
-                pMaxLife[i] = 1f + random.nextFloat() * 1.2f;
-                pSize[i] = 0.5f + random.nextFloat() * 0.7f;
-                break;
-            default:
-                // Sparkles appear on the image's own glowing spots and drift up.
-                pu[i] = spawnU[k];
-                pv[i] = spawnV[k];
-                pVu[i] = 0f;
-                pVv[i] = -0.012f;
-                pMaxLife[i] = 2.5f + random.nextFloat() * 4f;
-                pSize[i] = 0.8f + random.nextFloat() * 1.6f;
-                break;
-        }
-    }
-
-    private static int whiter(int c) {
-        float[] hsv = new float[3];
-        Color.colorToHSV(c, hsv);
-        hsv[1] = Math.min(hsv[1], 0.3f);
-        hsv[2] = 1f;
-        return Color.HSVToColor(hsv);
     }
 
     /** Same result as Color.colorToHSV, without a native call per pixel. */
@@ -485,14 +286,6 @@ final class LivingImage {
         hsv[0] = h;
         hsv[1] = max > 0f ? delta / max : 0f;
         hsv[2] = max;
-    }
-
-    private static int brighten(int c) {
-        float[] hsv = new float[3];
-        Color.colorToHSV(c, hsv);
-        hsv[1] = Math.min(hsv[1], 0.7f);
-        hsv[2] = 1f;
-        return Color.HSVToColor(hsv);
     }
 
     private static float hueDistance(float a, float b) {
