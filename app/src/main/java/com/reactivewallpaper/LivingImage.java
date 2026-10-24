@@ -238,10 +238,11 @@ final class LivingImage {
      * @param particleDx extra screen offset for particles, which sit "in front" for parallax
      * @param colorFilter recolors the glow and particles, or null
      * @param particleScale fraction of the particle count to draw (lower to save battery)
+     * @param drawGlow false for moving backgrounds, whose glow is drawn from each frame instead
      */
     void draw(Canvas canvas, Matrix imageMatrix, AudioAnalyzer audio, WallpaperSettings s,
               float dt, float density, float particleDx, float particleDy,
-              ColorFilter colorFilter, float particleScale) {
+              ColorFilter colorFilter, float particleScale, boolean drawGlow) {
         time += dt;
         breathePhase += dt * s.breatheSpeed;
         float bass = audio.bass();
@@ -255,8 +256,10 @@ final class LivingImage {
         float bassAmount = idleA + s.bassGlow * bass * 1.3f + s.beatFlare * beat;
         float highAmount = idleB + s.highGlow * high * 1.6f + s.beatFlare * beat * 0.35f;
         int bassGroup = s.swapGlowColors ? 1 : 0;
-        drawGroup(canvas, imageMatrix, bassGroup, bassAmount, s.bloom);
-        drawGroup(canvas, imageMatrix, 1 - bassGroup, highAmount, s.bloom);
+        if (drawGlow) {
+            drawGroup(canvas, imageMatrix, bassGroup, bassAmount, s.bloom);
+            drawGroup(canvas, imageMatrix, 1 - bassGroup, highAmount, s.bloom);
+        }
 
         int particles = Math.round(s.sparkleAmount * PARTICLE_COUNT * particleScale);
         if (particles > 0 && spawnCount > 0) {

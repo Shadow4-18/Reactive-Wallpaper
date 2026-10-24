@@ -23,6 +23,60 @@ final class ImageStore {
     private static final String DRAFT_FILE_NAME = "editor_image";
     private static final String MASK_FILE_NAME = "wallpaper_mask.png";
     private static final String DRAFT_MASK_FILE_NAME = "editor_mask.png";
+    private static final String MEDIA_FILE_NAME = "wallpaper_media";
+    private static final String DRAFT_MEDIA_FILE_NAME = "editor_media";
+
+    /**
+     * Everything that makes up a background: the still image (for a video or
+     * GIF, its first frame), the painted glow mask, and the video or animated
+     * file if there is one. Missing files mean "none". They always move together.
+     */
+    static final class Picture {
+        final File image;
+        final File mask;
+        final File media;
+
+        Picture(File image, File mask, File media) {
+            this.image = image;
+            this.mask = mask;
+            this.media = media;
+        }
+
+        boolean hasImage() {
+            return image.length() > 0;
+        }
+
+        /** Changes whenever any of the files does, for spotting a reload. */
+        String stamp() {
+            return image.getPath() + ":" + image.lastModified() + ":" + mask.lastModified() + ":" + media.lastModified();
+        }
+    }
+
+    /** The background the wallpaper shows. */
+    static Picture live(Context context) {
+        return new Picture(file(context), maskFile(context), new File(context.getFilesDir(), MEDIA_FILE_NAME));
+    }
+
+    /** The background being edited. */
+    static Picture draft(Context context) {
+        return new Picture(draftFile(context), draftMaskFile(context),
+                new File(context.getFilesDir(), DRAFT_MEDIA_FILE_NAME));
+    }
+
+    /** Copies all parts of a background; a missing part removes the target's. Call off the main thread. */
+    static void copy(Picture from, Picture to) {
+        copyOrDelete(from.image, to.image);
+        copyOrDelete(from.mask, to.mask);
+        copyOrDelete(from.media, to.media);
+    }
+
+    private static void copyOrDelete(File from, File to) {
+        if (from.length() > 0) {
+            copy(from, to);
+        } else {
+            to.delete();
+        }
+    }
 
     private ImageStore() {}
 
@@ -43,23 +97,6 @@ final class ImageStore {
 
     static File draftMaskFile(Context context) {
         return new File(context.getFilesDir(), DRAFT_MASK_FILE_NAME);
-    }
-
-    /**
-     * Copies an image and its painted mask together. A missing source file
-     * removes the target, so the pair always matches. Call off the main thread.
-     */
-    static void copyWithMask(File fromImage, File fromMask, File toImage, File toMask) {
-        if (fromImage.length() > 0) {
-            copy(fromImage, toImage);
-        } else {
-            toImage.delete();
-        }
-        if (fromMask.length() > 0) {
-            copy(fromMask, toMask);
-        } else {
-            toMask.delete();
-        }
     }
 
     static Bitmap loadMask(File f) {
@@ -112,6 +149,126 @@ final class ImageStore {
 
     static boolean hasDraftImage(Context context) {
         return draftFile(context).length() > 0;
+    }
+
+    /**
+     * Copies a picked image, animated GIF/WebP or video into the editor's draft
+     * and returns its {@code WallpaperSettings.MEDIA_*} type, or -1 if it can't
+     * be used. For moving backgrounds a still first frame is saved as the image.
+     * Call off the main thread.
+     */
+    static int importBackground(Context context, Uri uri) {
+        Picture draft = draft(context);
+        String type = context.getContentResolver().getType(uri);
+        boolean video = type != null && type.startsWith("video/");
+        boolean maybeAnimated = type != null && (type.equals("image/gif") || type.equals("image/webp"));
+        if (!video && !maybeAnimated) {
+            if (!importImage(context, uri)) {
+                return -1;
+            }
+            draft.media.delete();
+            return WallpaperSettings.MEDIA_IMAGE;
+        }
+        if (video && android.os.Build.VERSION.SDK_INT < 29) {
+            return -1;
+        }
+        if (!copyUri(context, uri, draft.media)) {
+            return -1;
+        }
+        if (maybeAnimated) {
+            boolean animated = android.os.Build.VERSION.SDK_INT >= 28 && AnimatedBackground.isAnimated(draft.media);
+            // The file's first frame doubles as the still image.
+            boolean ok = copy(draft.media, draft.image);
+            if (!animated) {
+                draft.media.delete();
+            }
+            return ok ? (animated ? WallpaperSettings.MEDIA_ANIMATED : WallpaperSettings.MEDIA_IMAGE) : -1;
+        }
+        Bitmap poster = videoPoster(draft.media);
+        if (poster == null) {
+            draft.media.delete();
+            return -1;
+        }
+        boolean saved = saveJpeg(poster, draft.image);
+        poster.recycle();
+        return saved ? WallpaperSettings.MEDIA_VIDEO : -1;
+    }
+
+    /** The first frame of a video, upright. */
+    private static Bitmap videoPoster(File video) {
+        android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(video.getPath());
+            Bitmap frame = retriever.getFrameAtTime(0);
+            if (frame == null) {
+                return null;
+            }
+            int rotation = 0;
+            int w = 0;
+            int h = 0;
+            try {
+                rotation = Integer.parseInt(retriever.extractMetadata(
+                        android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION));
+                w = Integer.parseInt(retriever.extractMetadata(
+                        android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH));
+                h = Integer.parseInt(retriever.extractMetadata(
+                        android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT));
+            } catch (NumberFormatException | NullPointerException ignored) {
+            }
+            // Frames usually come back upright, but some phones return them as stored.
+            // A 90/270 degree video still in its stored shape is sideways: turn it.
+            boolean sideways = rotation % 180 != 0 && w != h
+                    && (frame.getWidth() > frame.getHeight()) == (w > h);
+            if (sideways) {
+                Matrix m = new Matrix();
+                m.postRotate(rotation);
+                Bitmap turned = Bitmap.createBitmap(frame, 0, 0, frame.getWidth(), frame.getHeight(), m, true);
+                if (turned != frame) {
+                    frame.recycle();
+                }
+                return turned;
+            }
+            return frame;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not read video", e);
+            return null;
+        } finally {
+            try {
+                retriever.release();
+            } catch (IOException | RuntimeException ignored) {
+            }
+        }
+    }
+
+    private static boolean saveJpeg(Bitmap bitmap, File f) {
+        File temp = new File(f.getPath() + ".tmp");
+        try (OutputStream out = new FileOutputStream(temp)) {
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out);
+        } catch (IOException e) {
+            temp.delete();
+            return false;
+        }
+        return temp.renameTo(f);
+    }
+
+    private static boolean copyUri(Context context, Uri uri, File target) {
+        File temp = new File(target.getPath() + ".tmp");
+        try (InputStream in = context.getContentResolver().openInputStream(uri);
+             OutputStream out = new FileOutputStream(temp)) {
+            if (in == null) {
+                return false;
+            }
+            byte[] buffer = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buffer)) > 0) {
+                out.write(buffer, 0, n);
+            }
+        } catch (IOException | SecurityException e) {
+            Log.w(TAG, "Could not import file", e);
+            temp.delete();
+            return false;
+        }
+        return temp.renameTo(target);
     }
 
     /** Copies the picked image into the editor's draft. Call off the main thread. */

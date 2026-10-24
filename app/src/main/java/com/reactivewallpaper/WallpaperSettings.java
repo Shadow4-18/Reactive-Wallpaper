@@ -34,6 +34,20 @@ final class WallpaperSettings {
     static final int PARTICLE_BUBBLES = 3;
     static final int PARTICLE_STREAKS = 4;
 
+    static final int MEDIA_IMAGE = 0;
+    /** An animated GIF or WebP. */
+    static final int MEDIA_ANIMATED = 1;
+    static final int MEDIA_VIDEO = 2;
+
+    static final int ART_FILL = 0;
+    /** The cover as a card over a blurred copy of itself. */
+    static final int ART_CARD = 1;
+
+    static final int ROTATE_OFF = 0;
+    static final int ROTATE_MINUTES = 1;
+    static final int ROTATE_SONG = 2;
+    static final int ROTATE_DOUBLE_TAP = 3;
+
     static final int SAVER_OFF = 0;
     static final int SAVER_AUTO = 1;
     static final int SAVER_ALWAYS = 2;
@@ -70,6 +84,10 @@ final class WallpaperSettings {
     float colorCycle = 0f;
     /** Recolor the whole picture, not only the glow and effects. */
     boolean recolorImage = false;
+
+    // Album art: show the playing song's cover instead of the image when there is one.
+    boolean albumArt = false;
+    int albumArtStyle = ART_CARD;
 
     // Parallax.
     float tiltParallax = 0.6f;
@@ -117,6 +135,8 @@ final class WallpaperSettings {
      * wallpapers reload both.
      */
     long imageVersion;
+    /** What kind of background {@link #imageVersion} refers to; travels with the image. */
+    int mediaType = MEDIA_IMAGE;
 
     /** Where settings are read from: the app's preferences or a saved look. */
     interface Reader {
@@ -150,6 +170,38 @@ final class WallpaperSettings {
         prefs(context).edit().putString(KEY_LOCK_LOOK, id == null ? "" : id).apply();
     }
 
+    private static final String KEY_ROTATION_IDS = "rotationIds";
+    private static final String KEY_ROTATION_MODE = "rotationMode";
+    private static final String KEY_ROTATION_MINUTES = "rotationMinutes";
+
+    /** Saved looks the home screen cycles through (empty = no rotation). */
+    static java.util.List<String> rotationIds(Context context) {
+        String joined = prefs(context).getString(KEY_ROTATION_IDS, "");
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (String id : joined.split("\n")) {
+            if (!id.isEmpty()) {
+                ids.add(id);
+            }
+        }
+        return ids;
+    }
+
+    static int rotationMode(Context context) {
+        return prefs(context).getInt(KEY_ROTATION_MODE, ROTATE_OFF);
+    }
+
+    static int rotationMinutes(Context context) {
+        return prefs(context).getInt(KEY_ROTATION_MINUTES, 30);
+    }
+
+    static void setRotation(Context context, java.util.List<String> ids, int mode, int minutes) {
+        prefs(context).edit()
+                .putString(KEY_ROTATION_IDS, String.join("\n", ids))
+                .putInt(KEY_ROTATION_MODE, mode)
+                .putInt(KEY_ROTATION_MINUTES, minutes)
+                .apply();
+    }
+
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
@@ -167,8 +219,7 @@ final class WallpaperSettings {
         SharedPreferences draft = context.getSharedPreferences(DRAFT_PREFS_NAME, Context.MODE_PRIVATE);
         if (!draft.contains("imageVersion")) {
             WallpaperSettings live = load(context);
-            ImageStore.copyWithMask(ImageStore.file(context), ImageStore.maskFile(context),
-                    ImageStore.draftFile(context), ImageStore.draftMaskFile(context));
+            ImageStore.copy(ImageStore.live(context), ImageStore.draft(context));
             live.saveDraft(context);
             return live;
         }
@@ -224,6 +275,8 @@ final class WallpaperSettings {
         s.hueShift = p.getFloat("hueShift", s.hueShift);
         s.colorCycle = p.getFloat("colorCycle", s.colorCycle);
         s.recolorImage = p.getBoolean("recolorImage", s.recolorImage);
+        s.albumArt = p.getBoolean("albumArt", s.albumArt);
+        s.albumArtStyle = p.getInt("albumArtStyle", s.albumArtStyle);
         s.tiltParallax = p.getFloat("tiltParallax", s.tiltParallax);
         s.swipeParallax = p.getFloat("swipeParallax", s.swipeParallax);
 
@@ -251,6 +304,7 @@ final class WallpaperSettings {
         s.batterySaver = p.getInt("batterySaver", s.batterySaver);
         s.sleepMinutes = p.getInt("sleepMinutes", s.sleepMinutes);
         s.imageVersion = p.getLong("imageVersion", s.imageVersion);
+        s.mediaType = p.getInt("mediaType", s.mediaType);
         return s;
     }
 
@@ -307,6 +361,8 @@ final class WallpaperSettings {
         w.putFloat("hueShift", hueShift);
         w.putFloat("colorCycle", colorCycle);
         w.putBoolean("recolorImage", recolorImage);
+        w.putBoolean("albumArt", albumArt);
+        w.putInt("albumArtStyle", albumArtStyle);
         w.putFloat("tiltParallax", tiltParallax);
         w.putFloat("swipeParallax", swipeParallax);
         w.putFloat("pulseAmount", pulse);
@@ -331,6 +387,7 @@ final class WallpaperSettings {
         w.putInt("batterySaver", batterySaver);
         w.putInt("sleepMinutes", sleepMinutes);
         w.putLong("imageVersion", imageVersion);
+        w.putInt("mediaType", mediaType);
     }
 
     /** Defaults for every effect, keeping the chosen image and audio source. */
@@ -344,6 +401,7 @@ final class WallpaperSettings {
      */
     WallpaperSettings keepDeviceSettingsFrom(WallpaperSettings current) {
         imageVersion = current.imageVersion;
+        mediaType = current.mediaType;
         copyDeviceSettingsFrom(current);
         return this;
     }

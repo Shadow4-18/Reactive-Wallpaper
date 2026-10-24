@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Resona</string>
     <string name="wallpaper_description">Your picture, alive with your music.</string>
-    <string name="choose_image">Choose image</string>
+    <string name="choose_image">Choose background</string>
     <string name="set_wallpaper">Set as wallpaper</string>
     <string name="apply_changes">Apply changes</string>
     <string name="applied">Applied ✓</string>
@@ -11,7 +11,7 @@
     <string name="applied_toast">Applied to your wallpaper</string>
     <string name="permission_note">Audio access is off, so the wallpaper can\'t react. Tap to allow.</string>
     <string name="no_gallery">No app found for picking images.</string>
-    <string name="image_failed">Couldn\'t open that image. Try a JPG or PNG.</string>
+    <string name="image_failed">Couldn\'t open that file. Try a JPG, PNG, GIF or video.</string>
     <string name="pick_from_list">Pick \"Resona\" from the list.</string>
     <string name="no_live_wallpaper">This phone doesn\'t support live wallpapers.</string>
 </resources>

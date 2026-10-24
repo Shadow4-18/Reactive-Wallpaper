@@ -9,12 +9,15 @@ import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.graphics.Shader;
 
 /** Draws the image plus the audio-reactive effects. Shared by the wallpaper and the in-app preview. */
 final class WallpaperRenderer {
     private static final float[] DEFAULT_HUES = {185f, 300f};
+    private static final PorterDuffXfermode ADD = new PorterDuffXfermode(PorterDuff.Mode.ADD);
 
     private final float density;
     private final Paint imagePaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
@@ -28,6 +31,15 @@ final class WallpaperRenderer {
 
     private Bitmap image;
     private Bitmap mask;
+    private MediaBackground media;
+    private Bitmap mediaFrame;
+    private final Matrix mediaMatrix = new Matrix();
+    private final Matrix bloomMatrix = new Matrix();
+    private final Paint mediaGlowPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private float mediaBreathePhase;
+    private float glowFilterCoverage = Float.NaN;
+    private float glowFilterHue = Float.NaN;
+    private ColorMatrixColorFilter mediaGlowFilter;
     private LivingImage living;
     private float[] accentHues = DEFAULT_HUES;
     private float time;
@@ -81,6 +93,25 @@ final class WallpaperRenderer {
 
     void release() {
         setImage(null, null);
+        setMedia(null);
+    }
+
+    /**
+     * A moving background drawn instead of the still image (which stays as its
+     * stand-in for sizing, colors and particles). Takes ownership; null for none.
+     */
+    void setMedia(MediaBackground next) {
+        if (media != null && media != next) {
+            media.release();
+        }
+        media = next;
+        mediaFrame = null;
+    }
+
+    void setMediaPlaying(boolean playing) {
+        if (media != null) {
+            media.setPlaying(playing);
+        }
     }
 
     /** Phone tilt from {@link TiltSensor}, -1..1 on each axis. */
@@ -108,6 +139,8 @@ final class WallpaperRenderer {
         updateParallax(w, h, s, dt);
         ColorMatrixColorFilter filter = hueFilter((s.hueShift + cyclePhase) % 360f);
         imagePaint.setColorFilter(s.recolorImage ? filter : null);
+        // Hardware bitmaps (video frames) can only be drawn on a hardware canvas.
+        mediaFrame = media != null && canvas.isHardwareAccelerated() ? media.frame() : null;
 
         drawBackground(canvas, w, h, s, bass, beat);
         if (living != null) {
@@ -117,7 +150,10 @@ final class WallpaperRenderer {
             }
             // Particles sit "in front" of the picture, so they move further with parallax.
             living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,
-                    filter, saving ? 0.5f : 1f);
+                    filter, saving ? 0.5f : 1f, mediaFrame == null);
+        }
+        if (mediaFrame != null) {
+            drawMediaGlow(canvas, w, h, audio, s, dt);
         }
 
         if (s.flash > 0f && beat > 0.01f) {
@@ -192,7 +228,96 @@ final class WallpaperRenderer {
         // Zoom around the ring when there is one, so artwork under it stays lined up.
         float pivotY = s.style == WallpaperSettings.STYLE_CIRCLE ? h * s.circleY : h / 2f;
         matrix.postScale(zoom, zoom, w / 2f, pivotY);
-        canvas.drawBitmap(image, matrix, imagePaint);
+        if (mediaFrame != null) {
+            updateMediaMatrix();
+            canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
+        } else {
+            canvas.drawBitmap(image, matrix, imagePaint);
+        }
+    }
+
+    /** Maps the current media frame onto the still image's place on screen, turning it upright. */
+    private void updateMediaMatrix() {
+        int fw = mediaFrame.getWidth();
+        int fh = mediaFrame.getHeight();
+        mediaMatrix.reset();
+        switch (media.rotation()) {
+            case 90:
+                mediaMatrix.postRotate(90);
+                mediaMatrix.postTranslate(fh, 0);
+                break;
+            case 180:
+                mediaMatrix.postRotate(180);
+                mediaMatrix.postTranslate(fw, fh);
+                break;
+            case 270:
+                mediaMatrix.postRotate(270);
+                mediaMatrix.postTranslate(0, fw);
+                break;
+            default:
+                break;
+        }
+        int uw = media.rotation() % 180 == 0 ? fw : fh;
+        int uh = media.rotation() % 180 == 0 ? fh : fw;
+        mediaMatrix.postScale(image.getWidth() / (float) uw, image.getHeight() / (float) uh);
+        mediaMatrix.postConcat(matrix);
+    }
+
+    /**
+     * Glow for moving backgrounds: the frame's bright parts (picked out on the
+     * GPU by a threshold color filter) added back on top, brighter with the music.
+     */
+    private void drawMediaGlow(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s, float dt) {
+        mediaBreathePhase += dt * s.breatheSpeed;
+        float idle = s.breathe * (0.3f + 0.22f * (float) Math.sin(mediaBreathePhase * 1.1f));
+        float amount = idle + s.bassGlow * audio.bass() * 1.1f + s.highGlow * audio.high() * 0.9f
+                + s.beatFlare * audio.beat();
+        amount = Math.min(amount, 4f);
+        if (amount <= 0.01f) {
+            return;
+        }
+        mediaGlowPaint.setXfermode(ADD);
+        mediaGlowPaint.setColorFilter(mediaGlowFilter(s.glowCoverage, (s.hueShift + cyclePhase) % 360f));
+        for (float left = amount * 0.8f; left > 0.01f; left -= 1f) {
+            mediaGlowPaint.setAlpha((int) (Math.min(1f, left) * 255));
+            canvas.drawBitmap(mediaFrame, mediaMatrix, mediaGlowPaint);
+        }
+        // A soft halo: the same highlights drawn slightly enlarged and faint.
+        for (float spread : new float[] {1.025f, 1.055f}) {
+            float alpha = Math.min(1f, amount * s.bloom * 0.3f);
+            if (alpha <= 0.01f) {
+                break;
+            }
+            bloomMatrix.set(mediaMatrix);
+            bloomMatrix.postScale(spread, spread, w / 2f, h / 2f);
+            mediaGlowPaint.setAlpha((int) (alpha * 255));
+            canvas.drawBitmap(mediaFrame, bloomMatrix, mediaGlowPaint);
+        }
+    }
+
+    /** Keeps only colors brighter than the coverage threshold, stretched back to full range. */
+    private ColorMatrixColorFilter mediaGlowFilter(float coverage, float hue) {
+        if (coverage == glowFilterCoverage && Math.abs(hue - glowFilterHue) < 0.5f && mediaGlowFilter != null) {
+            return mediaGlowFilter;
+        }
+        float t = 0.7f - 0.55f * coverage;
+        float k = 1f / (1f - t);
+        float offset = -t * k * 255f;
+        ColorMatrix m = new ColorMatrix(new float[] {
+                k, 0, 0, 0, offset,
+                0, k, 0, 0, offset,
+                0, 0, k, 0, offset,
+                0, 0, 0, 1, 0,
+        });
+        if (hue >= 0.5f && hue <= 359.5f) {
+            ColorMatrix rotate = new ColorMatrix();
+            rotate.set(hueMatrix(hue));
+            m.postConcat(rotate);
+        }
+        mediaGlowFilter = new ColorMatrixColorFilter(m);
+        glowFilterCoverage = coverage;
+        glowFilterHue = hue;
+        return mediaGlowFilter;
     }
 
     private void drawBars(Canvas canvas, int w, int h, float[] bands, WallpaperSettings s) {
@@ -330,17 +455,21 @@ final class WallpaperRenderer {
         if (Math.abs(degrees - appliedHue) < 0.5f) {
             return hueFilter;
         }
+        hueFilter = new ColorMatrixColorFilter(new ColorMatrix(hueMatrix(degrees)));
+        appliedHue = degrees;
+        return hueFilter;
+    }
+
+    private static float[] hueMatrix(float degrees) {
         double rad = Math.toRadians(degrees);
         float c = (float) Math.cos(rad);
         float n = (float) Math.sin(rad);
-        hueFilter = new ColorMatrixColorFilter(new ColorMatrix(new float[] {
+        return new float[] {
                 0.213f + c * 0.787f - n * 0.213f, 0.715f - c * 0.715f - n * 0.715f, 0.072f - c * 0.072f + n * 0.928f, 0, 0,
                 0.213f - c * 0.213f + n * 0.143f, 0.715f + c * 0.285f + n * 0.140f, 0.072f - c * 0.072f - n * 0.283f, 0, 0,
                 0.213f - c * 0.213f - n * 0.787f, 0.715f - c * 0.715f + n * 0.715f, 0.072f + c * 0.928f + n * 0.072f, 0, 0,
                 0, 0, 0, 1, 0,
-        }));
-        appliedHue = degrees;
-        return hueFilter;
+        };
     }
 
     /** Color for a position 0..1 across the spectrum. */

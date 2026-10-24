@@ -9,8 +9,15 @@ music or video is playing on your phone.
 
 ## Features
 
-- **Your own image** from the gallery, center-cropped to fill the screen and
-  rotated correctly for camera photos.
+- **Your own image, GIF or video** from the gallery, center-cropped to fill
+  the screen and turned upright. Animated GIF/WebP needs Android 9+, video
+  (muted, looping) Android 10+. Moving backgrounds glow wherever each frame is
+  bright.
+- **Album art mode:** show the playing song's cover (full screen, or as a card
+  over a blurred copy) with all the effects, falling back to your image when
+  nothing plays.
+- **Rotate looks:** cycle the home screen through saved looks every few
+  minutes, every new song, or on a double-tap, with a crossfade.
 - **Living image:** the glowing, colorful parts of your picture light up and
   bloom with the music in their own colors. The image's dominant color follows
   the bass and its second color follows the mids and highs.
@@ -96,6 +103,13 @@ delay for that output.
 
 You can also set the **Delay** sliders by hand. The app switches between the
 speaker and Bluetooth delays automatically.
+
+## Notification access
+
+Album art mode and "every new song" rotation need to know what's playing.
+Android only shares that with apps that have notification access, so Resona
+asks for it. Resona only reads the current song's title and cover; it never
+reads your notifications.
 
 ## Building locally
 

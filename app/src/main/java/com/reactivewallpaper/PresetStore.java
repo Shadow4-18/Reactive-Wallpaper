@@ -10,6 +10,8 @@ import org.json.JSONObject;
 
 import android.graphics.BitmapFactory;
 
+import com.reactivewallpaper.ImageStore.Picture;
+
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -86,6 +88,7 @@ final class PresetStore {
     private static final int FORMAT_VERSION = 1;
     private static final long MAX_MANIFEST_BYTES = 1L << 20;
     private static final long MAX_IMAGE_BYTES = 60L << 20;
+    private static final long MAX_MEDIA_BYTES = 300L << 20;
     private static final int MAX_LOOKS = 200;
 
     /** Writes the looks (with their images and painted masks) as a .resona file. */
@@ -107,6 +110,10 @@ final class PresetStore {
                     putFile(zip, "looks/" + i + "/image", imageFile(context, p.id));
                     if (maskFile(context, p.id).length() > 0) {
                         putFile(zip, "looks/" + i + "/mask.png", maskFile(context, p.id));
+                    }
+                    File media = picture(context, p.id).media;
+                    if (media.length() > 0) {
+                        putFile(zip, "looks/" + i + "/media", media);
                     }
                 }
             }
@@ -156,8 +163,9 @@ final class PresetStore {
                     } else {
                         File target = importTarget(work, name);
                         if (target != null) {
+                            long limit = target.getName().endsWith(".media") ? MAX_MEDIA_BYTES : MAX_IMAGE_BYTES;
                             try (OutputStream out = new FileOutputStream(target)) {
-                                copyLimited(zip, out, MAX_IMAGE_BYTES);
+                                copyLimited(zip, out, limit);
                             }
                         }
                     }
@@ -186,7 +194,7 @@ final class PresetStore {
                 }
                 name = name.length() > 60 ? name.substring(0, 60) : name;
                 // Round-trip through settings so only known values are kept.
-                JSONObject look = toJson(fromJson(o.optJSONObject("look")));
+                WallpaperSettings settings = fromJson(o.optJSONObject("look"));
                 boolean hasImage = false;
                 File image = new File(work, i + ".image");
                 if (o.optBoolean("hasImage") && isImage(image)) {
@@ -195,7 +203,16 @@ final class PresetStore {
                     if (hasImage && isImage(mask)) {
                         ImageStore.copy(mask, maskFile(context, id));
                     }
+                    File media = new File(work, i + ".media");
+                    if (!hasImage || settings.mediaType == WallpaperSettings.MEDIA_IMAGE || media.length() == 0
+                            || !ImageStore.copy(media, picture(context, id).media)) {
+                        // Without its video/animation the look still works as a still image.
+                        settings.mediaType = WallpaperSettings.MEDIA_IMAGE;
+                    }
+                } else {
+                    settings.mediaType = WallpaperSettings.MEDIA_IMAGE;
                 }
+                JSONObject look = toJson(settings);
                 list.add(new Preset(id, name, false, hasImage, look));
                 added++;
             }
@@ -226,6 +243,9 @@ final class PresetStore {
         }
         if (parts[2].equals("mask.png")) {
             return new File(work, index + ".mask");
+        }
+        if (parts[2].equals("media")) {
+            return new File(work, index + ".media");
         }
         return null;
     }
@@ -274,8 +294,7 @@ final class PresetStore {
         String id = UUID.randomUUID().toString();
         boolean hasImage = includeImage && ImageStore.hasDraftImage(context);
         if (hasImage) {
-            ImageStore.copyWithMask(ImageStore.draftFile(context), ImageStore.draftMaskFile(context),
-                    imageFile(context, id), maskFile(context, id));
+            ImageStore.copy(ImageStore.draft(context), picture(context, id));
         }
         Preset preset = new Preset(id, name, false, hasImage, toJson(settings));
         List<Preset> list = userPresets(context);
@@ -287,8 +306,7 @@ final class PresetStore {
     /** Replaces a saved look's settings (and image, if it has one) with the current ones. */
     static void update(Context context, Preset preset, WallpaperSettings settings) {
         if (preset.hasImage && ImageStore.hasDraftImage(context)) {
-            ImageStore.copyWithMask(ImageStore.draftFile(context), ImageStore.draftMaskFile(context),
-                    imageFile(context, preset.id), maskFile(context, preset.id));
+            ImageStore.copy(ImageStore.draft(context), picture(context, preset.id));
         }
         replace(context, preset, new Preset(preset.id, preset.name, false, preset.hasImage, toJson(settings)));
     }
@@ -301,8 +319,10 @@ final class PresetStore {
         List<Preset> list = userPresets(context);
         list.removeIf(p -> p.id.equals(preset.id));
         store(context, list);
-        imageFile(context, preset.id).delete();
-        maskFile(context, preset.id).delete();
+        Picture picture = picture(context, preset.id);
+        picture.image.delete();
+        picture.mask.delete();
+        picture.media.delete();
     }
 
     /**
@@ -313,9 +333,9 @@ final class PresetStore {
     static WallpaperSettings apply(Context context, Preset preset, WallpaperSettings current) {
         WallpaperSettings next = fromJson(preset.look).keepDeviceSettingsFrom(current);
         if (preset.hasImage && imageFile(context, preset.id).length() > 0) {
-            ImageStore.copyWithMask(imageFile(context, preset.id), maskFile(context, preset.id),
-                    ImageStore.draftFile(context), ImageStore.draftMaskFile(context));
+            ImageStore.copy(picture(context, preset.id), ImageStore.draft(context));
             next.imageVersion = System.currentTimeMillis();
+            next.mediaType = fromJson(preset.look).mediaType;
         }
         next.saveDraft(context);
         return next;
@@ -334,6 +354,12 @@ final class PresetStore {
 
     static File maskFile(Context context, String id) {
         return new File(imageFile(context, id).getParentFile(), id + ".mask.png");
+    }
+
+    /** A saved look's own background files. */
+    static Picture picture(Context context, String id) {
+        File image = imageFile(context, id);
+        return new Picture(image, maskFile(context, id), new File(image.getParentFile(), id + ".media"));
     }
 
     private static void replace(Context context, Preset old, Preset updated) {

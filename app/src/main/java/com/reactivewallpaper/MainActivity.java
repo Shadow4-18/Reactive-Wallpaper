@@ -73,6 +73,9 @@ public class MainActivity extends Activity {
     private View hueOption;
     private LinearLayout looksRow;
     private Button lockLookButton;
+    private Button rotationButton;
+    private AlbumArtSource artSource;
+    private Bitmap art;
     /** Looks waiting for the user to pick where to save the export. */
     private java.util.List<PresetStore.Preset> pendingExport;
     private final Map<String, Boolean> expandedSections = new HashMap<>();
@@ -103,6 +106,15 @@ public class MainActivity extends Activity {
         preview.bind(renderer, analyzer, settings);
         tilt = new TiltSensor(this);
         preview.setTiltSensor(tilt);
+        artSource = new AlbumArtSource(this, (key, cover) -> {
+            if (art != null) {
+                art.recycle();
+            }
+            art = cover;
+            if (settings.albumArt) {
+                loadPreviewImage();
+            }
+        });
         sizePreviewToScreen();
         loadPreviewImage();
 
@@ -148,6 +160,10 @@ public class MainActivity extends Activity {
         lockLookButton.setOnClickListener(v -> chooseLockLook());
         looks.addView(lockLookButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        rotationButton = new Button(this);
+        rotationButton.setOnClickListener(v -> rotationDialog());
+        looks.addView(rotationButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout shareRow = new LinearLayout(this);
         Button importLooks = new Button(this);
         importLooks.setText("Import looks");
@@ -186,6 +202,11 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "Choose an image first.", Toast.LENGTH_SHORT).show();
                 return;
             }
+            if (settings.mediaType != WallpaperSettings.MEDIA_IMAGE) {
+                Toast.makeText(this, "Painting works on still images. Videos and GIFs glow wherever "
+                        + "each frame is bright.", Toast.LENGTH_LONG).show();
+                return;
+            }
             Intent intent = new Intent(this, GlowPaintActivity.class);
             intent.putExtra(GlowPaintActivity.EXTRA_COVERAGE, settings.glowCoverage);
             startActivityForResult(intent, REQUEST_PAINT);
@@ -194,6 +215,28 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         toggle(glow, "Swap which color follows the bass",
                 () -> s.swapGlowColors, v -> s.swapGlowColors = v);
+
+        LinearLayout albumArt = section("Album art", false);
+        toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
+            s.albumArt = v;
+            if (v && !AlbumArtSource.hasAccess(this)) {
+                askForMediaAccess();
+            }
+            updateArtSource();
+            loadPreviewImage();
+        });
+        choice(albumArt, new String[] {"Card on blur", "Fill the screen"},
+                new int[] {WallpaperSettings.ART_CARD, WallpaperSettings.ART_FILL},
+                s.albumArtStyle, v -> {
+                    s.albumArtStyle = v;
+                    loadPreviewImage();
+                });
+        TextView artHint = new TextView(this);
+        artHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        artHint.setTextColor(getColor(R.color.text_secondary));
+        artHint.setText("Uses your image whenever nothing is playing. Needs notification access, which "
+                + "Android requires to see what's playing; Resona never reads your notifications.");
+        albumArt.addView(artHint);
 
         LinearLayout recolor = section("Recolor", false);
         slider(recolor, "Hue shift", 0f, 360f, () -> s.hueShift, v -> s.hueShift = v,
@@ -360,6 +403,9 @@ public class MainActivity extends Activity {
         // The wallpaper may have been set or changed while we were away.
         updateApplyState();
         tilt.start();
+        renderer.setMediaPlaying(true);
+        updateArtSource();
+        refreshLooks();
         restartAudio();
         preview.setRunning(true);
     }
@@ -373,6 +419,8 @@ public class MainActivity extends Activity {
         demo.stop();
         route.stop();
         tilt.stop();
+        artSource.stop();
+        renderer.setMediaPlaying(false);
     }
 
     @Override
@@ -405,6 +453,142 @@ public class MainActivity extends Activity {
         }
         PresetStore.Preset lock = PresetStore.find(this, WallpaperSettings.lockLookId(this));
         lockLookButton.setText("Lock screen: " + (lock == null ? "same as home" : lock.name));
+        rotationButton.setText("Rotate looks: " + rotationSummary());
+    }
+
+    private String rotationSummary() {
+        int mode = WallpaperSettings.rotationMode(this);
+        int count = 0;
+        for (String id : WallpaperSettings.rotationIds(this)) {
+            if (PresetStore.find(this, id) != null) {
+                count++;
+            }
+        }
+        if (mode == WallpaperSettings.ROTATE_OFF || count < 2) {
+            return "off";
+        }
+        String when = mode == WallpaperSettings.ROTATE_MINUTES
+                ? "every " + WallpaperSettings.rotationMinutes(this) + " min"
+                : mode == WallpaperSettings.ROTATE_SONG ? "every song" : "on double-tap";
+        return count + " looks, " + when;
+    }
+
+    /** Picks which saved looks the home screen cycles through, and when it moves on. */
+    private void rotationDialog() {
+        java.util.List<PresetStore.Preset> all = PresetStore.all(this);
+        java.util.List<String> chosen = new java.util.ArrayList<>(WallpaperSettings.rotationIds(this));
+        int[] mode = {WallpaperSettings.rotationMode(this)};
+        int[] minutes = {WallpaperSettings.rotationMinutes(this)};
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        label(box, "Switch looks");
+        TextView minutesLabel = new TextView(this);
+        SeekBar minutesBar = new SeekBar(this);
+        RadioGroup modes = new RadioGroup(this);
+        String[] modeNames = {"Off", "Every few minutes", "Every new song", "Double-tap the home screen"};
+        int[] modeValues = {WallpaperSettings.ROTATE_OFF, WallpaperSettings.ROTATE_MINUTES,
+                WallpaperSettings.ROTATE_SONG, WallpaperSettings.ROTATE_DOUBLE_TAP};
+        for (int i = 0; i < modeNames.length; i++) {
+            RadioButton b = new RadioButton(this);
+            b.setId(View.generateViewId());
+            b.setText(modeNames[i]);
+            b.setTextColor(getColor(R.color.text_primary));
+            int value = modeValues[i];
+            b.setChecked(value == mode[0]);
+            b.setOnClickListener(v -> {
+                mode[0] = value;
+                minutesBar.setEnabled(value == WallpaperSettings.ROTATE_MINUTES);
+            });
+            modes.addView(b);
+        }
+        box.addView(modes);
+        minutesLabel.setTextColor(getColor(R.color.text_secondary));
+        minutesLabel.setText("Every " + minutes[0] + " min");
+        box.addView(minutesLabel);
+        minutesBar.setMax(119);
+        minutesBar.setProgress(minutes[0] - 1);
+        minutesBar.setEnabled(mode[0] == WallpaperSettings.ROTATE_MINUTES);
+        minutesBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                minutes[0] = progress + 1;
+                minutesLabel.setText("Every " + minutes[0] + " min");
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        });
+        box.addView(minutesBar);
+        label(box, "Looks to rotate through");
+        for (PresetStore.Preset preset : all) {
+            CheckBox check = new CheckBox(this);
+            check.setText(preset.name);
+            check.setTextColor(getColor(R.color.text_primary));
+            check.setChecked(chosen.contains(preset.id));
+            check.setOnCheckedChangeListener((b, on) -> {
+                chosen.remove(preset.id);
+                if (on) {
+                    chosen.add(preset.id);
+                }
+            });
+            box.addView(check);
+        }
+        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.addView(box);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Rotate looks")
+                .setView(scroll)
+                .setPositiveButton("Save", (d, which) -> {
+                    // Keep the list in the order the looks appear.
+                    java.util.List<String> ordered = new java.util.ArrayList<>();
+                    for (PresetStore.Preset p : all) {
+                        if (chosen.contains(p.id)) {
+                            ordered.add(p.id);
+                        }
+                    }
+                    WallpaperSettings.setRotation(this, ordered, mode[0], minutes[0]);
+                    refreshLooks();
+                    if (mode[0] != WallpaperSettings.ROTATE_OFF && ordered.size() < 2) {
+                        Toast.makeText(this, "Pick at least two looks to rotate.", Toast.LENGTH_LONG).show();
+                    } else if (mode[0] == WallpaperSettings.ROTATE_SONG && !AlbumArtSource.hasAccess(this)) {
+                        askForMediaAccess();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void askForMediaAccess() {
+        new AlertDialog.Builder(this)
+                .setTitle("Allow access to what's playing")
+                .setMessage("To see the current song, Android needs Resona to have notification access. "
+                        + "On the next screen, turn on Resona. Resona only looks at what's playing and "
+                        + "never reads your notifications.")
+                .setPositiveButton("Open settings", (d, w) -> {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+                    } catch (ActivityNotFoundException e) {
+                        Toast.makeText(this, "Couldn't open the settings screen.", Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("Not now", null)
+                .show();
+    }
+
+    private void updateArtSource() {
+        if (resumed && settings.albumArt) {
+            artSource.start();
+        } else {
+            artSource.stop();
+        }
     }
 
     private void chooseLockLook() {
@@ -815,6 +999,14 @@ public class MainActivity extends Activity {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int w = dm.widthPixels / 2;
         int h = dm.heightPixels / 2;
+        if (settings.albumArt && art != null) {
+            // Show the playing song's cover, as the wallpaper will.
+            renderer.setImage(AlbumArt.compose(art, w, h, settings.albumArtStyle), null);
+            renderer.setMedia(null);
+            preview.invalidate();
+            return;
+        }
+        int mediaType = settings.mediaType;
         executor.execute(() -> {
             Bitmap bitmap = ImageStore.load(ImageStore.draftFile(this), w, h);
             Bitmap mask = ImageStore.loadMask(ImageStore.draftMaskFile(this));
@@ -826,6 +1018,10 @@ public class MainActivity extends Activity {
                     return;
                 }
                 renderer.setImage(bitmap, mask);
+                // Videos and GIFs open on the main thread (their players call back here).
+                renderer.setMedia(mediaType != WallpaperSettings.MEDIA_IMAGE
+                        ? MediaBackground.open(this, ImageStore.draft(this).media, mediaType) : null);
+                renderer.setMediaPlaying(resumed);
                 preview.invalidate();
             });
         });
@@ -833,7 +1029,8 @@ public class MainActivity extends Activity {
 
     private void chooseImage() {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setType("image/*");
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {"image/*", "video/*"});
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         try {
             startActivityForResult(Intent.createChooser(intent, getString(R.string.choose_image)), REQUEST_IMAGE);
@@ -871,8 +1068,9 @@ public class MainActivity extends Activity {
         }
         Uri uri = data.getData();
         executor.execute(() -> {
-            boolean ok = ImageStore.importImage(this, uri);
-            if (ok) {
+            String type = getContentResolver().getType(uri);
+            int mediaType = ImageStore.importBackground(this, uri);
+            if (mediaType >= 0) {
                 // A painted mask belongs to the old picture.
                 ImageStore.draftMaskFile(this).delete();
             }
@@ -880,11 +1078,16 @@ public class MainActivity extends Activity {
                 if (isDestroyed()) {
                     return;
                 }
-                if (!ok) {
-                    Toast.makeText(this, R.string.image_failed, Toast.LENGTH_LONG).show();
+                if (mediaType < 0) {
+                    boolean video = type != null && type.startsWith("video/");
+                    Toast.makeText(this, video && android.os.Build.VERSION.SDK_INT < 29
+                            ? "Video backgrounds need Android 10 or newer."
+                            : video ? "Couldn't open that video." : getString(R.string.image_failed),
+                            Toast.LENGTH_LONG).show();
                     return;
                 }
                 settings.imageVersion = System.currentTimeMillis();
+                settings.mediaType = mediaType;
                 saveDraft();
                 loadPreviewImage();
             });
@@ -903,8 +1106,7 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             WallpaperSettings live = WallpaperSettings.load(this);
             if (draft.imageVersion != live.imageVersion) {
-                ImageStore.copyWithMask(ImageStore.draftFile(this), ImageStore.draftMaskFile(this),
-                        ImageStore.file(this), ImageStore.maskFile(this));
+                ImageStore.copy(ImageStore.draft(this), ImageStore.live(this));
             }
             // Saved after the image is in place, since saving is what tells the wallpaper to reload.
             draft.save(this);
@@ -999,8 +1201,7 @@ public class MainActivity extends Activity {
     private void discardChanges() {
         executor.execute(() -> {
             WallpaperSettings live = WallpaperSettings.load(this);
-            ImageStore.copyWithMask(ImageStore.file(this), ImageStore.maskFile(this),
-                    ImageStore.draftFile(this), ImageStore.draftMaskFile(this));
+            ImageStore.copy(ImageStore.live(this), ImageStore.draft(this));
             live.saveDraft(this);
             mainHandler.post(() -> {
                 if (isDestroyed()) {
