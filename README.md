@@ -133,6 +133,9 @@ Open the project in Android Studio, or run:
 # -> app/build/outputs/apk/release/app-release.apk
 ```
 
-The APK is signed with the committed `app/debug.keystore`, so every build can be
-installed over the previous one. This is fine for sideloading, but use your own
-key if you ever publish it to a store.
+Release builds are signed with the private Resona key, kept as two repository
+secrets (`RESONA_KEYSTORE_BASE64`, `RESONA_KEYSTORE_PASSWORD`) that only the
+release workflow can read; it refuses to publish without them. Local builds use
+your machine's debug key, so they can't be installed over a released copy.
+Keep a backup of the key: without it, future versions can't update an
+installed Resona.

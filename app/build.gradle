@@ -10,30 +10,32 @@ android {
         applicationId = 'com.reactivewallpaper'
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = '2.1'
+        versionCode = 13
+        versionName = '2.2'
     }
 
-    // A fixed, committed debug key so every CI build can be installed over the
-    // previous one. This is a personal sideload app, not a Play Store release.
+    // Releases are signed with the private Resona key, which only the release
+    // workflow has (from repository secrets). Without it, e.g. on a developer's
+    // machine, builds use that machine's own debug key instead.
+    def releaseKeystore = System.getenv('RESONA_KEYSTORE_FILE')
     signingConfigs {
-        debug {
-            storeFile = file('debug.keystore')
-            storePassword = 'android'
-            keyAlias = 'androiddebugkey'
-            keyPassword = 'android'
+        release {
+            if (releaseKeystore) {
+                storeFile = file(releaseKeystore)
+                storeType = 'pkcs12'
+                storePassword = System.getenv('RESONA_KEYSTORE_PASSWORD')
+                keyAlias = 'resona'
+                keyPassword = System.getenv('RESONA_KEYSTORE_PASSWORD')
+            }
         }
     }
 
     buildTypes {
-        debug {
-            signingConfig = signingConfigs.debug
-        }
         release {
             minifyEnabled = true
             shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
-            signingConfig = signingConfigs.debug
+            signingConfig = releaseKeystore ? signingConfigs.release : signingConfigs.debug
         }
     }
 
