@@ -1244,10 +1244,30 @@ public class MainActivity extends Activity {
         });
     }
 
+    private boolean isOurs(WallpaperInfo info) {
+        return info != null && new ComponentName(this, ReactiveWallpaperService.class).equals(info.getComponent());
+    }
+
+    private boolean isOnHomeScreen() {
+        return isOurs(WallpaperManager.getInstance(this).getWallpaperInfo());
+    }
+
+    private boolean isOnLockScreen() {
+        WallpaperManager wm = WallpaperManager.getInstance(this);
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            try {
+                return isOurs(wm.getWallpaperInfo(WallpaperManager.FLAG_LOCK));
+            } catch (SecurityException e) {
+                // Some phone makers restrict this; fall through to the older check.
+            }
+        }
+        // Before Android 14 the lock screen shows the home wallpaper unless it has its own.
+        return isOnHomeScreen() && wm.getWallpaperId(WallpaperManager.FLAG_LOCK) < 0;
+    }
+
+    /** True if Resona is the wallpaper on the home screen, the lock screen, or both. */
     private boolean isOurWallpaperActive() {
-        WallpaperInfo current = WallpaperManager.getInstance(this).getWallpaperInfo();
-        return current != null
-                && new ComponentName(this, ReactiveWallpaperService.class).equals(current.getComponent());
+        return isOnHomeScreen() || isOnLockScreen();
     }
 
     /** Copies the draft (settings and image) to the live wallpaper, then runs {@code then}. */
@@ -1269,14 +1289,16 @@ public class MainActivity extends Activity {
     }
 
     private void applyWallpaper() {
-        if (isOurWallpaperActive()) {
+        boolean pending = !settings.sameAs(WallpaperSettings.load(this));
+        if (isOurWallpaperActive() && pending) {
             publish(() -> {
                 updateApplyState();
                 Toast.makeText(this, R.string.applied_toast, Toast.LENGTH_SHORT).show();
             });
             return;
         }
-        // The system preview screen shows the live settings, so publish before opening it.
+        // Nothing to apply: open Android's wallpaper screen, where the user picks home,
+        // lock or both. It previews the live settings, so publish before opening it.
         publish(this::openWallpaperPicker);
     }
 
@@ -1339,10 +1361,14 @@ public class MainActivity extends Activity {
     private void updateApplyState() {
         boolean active = isOurWallpaperActive();
         boolean pending = !settings.sameAs(WallpaperSettings.load(this));
-        if (!active) {
-            setWallpaper.setText(R.string.set_wallpaper);
+        if (active && pending) {
+            setWallpaper.setText(R.string.apply_changes);
+        } else if (isOnHomeScreen() && isOnLockScreen()) {
+            // Still opens the wallpaper screen when tapped, e.g. to change which screens.
+            setWallpaper.setText(R.string.applied);
         } else {
-            setWallpaper.setText(pending ? R.string.apply_changes : R.string.applied);
+            // Not set, or only on one screen: the wallpaper screen lets the user add the other.
+            setWallpaper.setText(R.string.set_wallpaper);
         }
         applyStatus.setVisibility(active && pending ? View.VISIBLE : View.GONE);
     }
