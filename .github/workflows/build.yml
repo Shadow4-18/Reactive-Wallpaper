@@ -11,6 +11,10 @@ on:
         description: 'Release tag to publish (e.g. v1.0). Leave empty to only build.'
         required: false
         default: ''
+      notes:
+        description: "What's new in this release (shown in the app's update banner)."
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -46,7 +50,12 @@ jobs:
           tag_name: ${{ inputs.version || github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: Resona ${{ inputs.version || github.ref_name }}
+          # The app shows everything above the --- line as "what's new".
           body: |
+            ${{ inputs.notes }}
+
+            ---
             Download **Resona.apk** below on your Android phone, open it,
-            and allow installing from unknown sources when asked.
+            and allow installing from unknown sources when asked. If you already
+            have Resona, it can update itself from inside the app.
           files: Resona.apk

@@ -4,6 +4,9 @@
     <!-- Needed both for the microphone and for reading what the phone is playing. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Only to check GitHub for new versions of Resona and download them. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature
         android:name="android.software.live_wallpaper"
@@ -26,6 +29,10 @@
 
         <activity
             android:name=".GlowPaintActivity"
+            android:exported="false" />
+
+        <receiver
+            android:name=".UpdateInstallReceiver"
             android:exported="false" />
 
         <!-- Only for "notification access", which Android needs before an app can see

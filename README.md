@@ -84,12 +84,25 @@ replaces whatever live wallpaper is active.
 - Android only. iPhones don't allow third-party live wallpapers.
 - Android labels the permission "record audio". In the default **Phone audio**
   mode, the app only reads a frequency spectrum of the sound the phone is
-  playing. Nothing is recorded or saved, and the app has no internet permission.
+  playing. Nothing is recorded or saved. Internet access is used only to check
+  this repository's releases for updates and download them.
 - Some phones with system-wide audio effects (Dolby Atmos, some Samsung sound
   settings) block the phone-audio visualizer. If the bars don't move while music
   plays, try turning those effects off, or switch to **Microphone**. The app
   also falls back to the microphone automatically if phone audio is
   unavailable.
+
+## Updates
+
+From version 2.1, Resona checks this repository's latest release when you
+open it (at most every 12 hours; you can turn that off under About & updates)
+and shows a banner when a newer version exists. **Update** downloads it,
+checks it's a newer Resona signed with the same key, and hands it to Android's
+installer, which asks you to confirm. Android also asks once for permission to
+let Resona install apps. Settings, looks and the running wallpaper carry over.
+
+To publish a release with notes for that banner, run the **Build APK**
+workflow with a version (e.g. `v2.2`) and the "What's new" notes.
 
 ## Sync
 

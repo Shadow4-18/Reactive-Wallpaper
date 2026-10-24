@@ -75,6 +75,8 @@ public class MainActivity extends Activity {
     private Button lockLookButton;
     private Button rotationButton;
     private AlbumArtSource artSource;
+    /** A newer release found on GitHub, shown as a banner at the top of the controls. */
+    private Updater.Release availableUpdate;
     private Bitmap art;
     /** Looks waiting for the user to pick where to save the export. */
     private java.util.List<PresetStore.Preset> pendingExport;
@@ -132,11 +134,17 @@ public class MainActivity extends Activity {
         if (!AudioController.hasPermission(this)) {
             requestAudioPermission();
         }
+        if (Updater.claimAutoCheck(this)) {
+            checkForUpdate(false);
+        }
     }
 
     private void buildControls() {
         controls.removeAllViews();
         WallpaperSettings s = settings;
+        if (availableUpdate != null) {
+            addUpdateBanner();
+        }
 
         LinearLayout looks = section("Looks", true);
         HorizontalScrollView scroll = new HorizontalScrollView(this);
@@ -375,6 +383,16 @@ public class MainActivity extends Activity {
         battery.addView(saverHint);
         slider(battery, "Sleep after silence", 0f, 30f, () -> s.sleepMinutes, v -> s.sleepMinutes = Math.round(v),
                 v -> Math.round(v) == 0 ? "Never" : Math.round(v) + " min");
+
+        LinearLayout about = section("About & updates", false);
+        label(about, "Resona " + Updater.installedVersion(this));
+        Button check = new Button(this);
+        check.setText("Check for updates");
+        check.setOnClickListener(v -> checkForUpdate(true));
+        about.addView(check, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        toggle(about, "Check automatically when opening the app",
+                () -> Updater.autoCheckEnabled(this), v -> Updater.setAutoCheck(this, v));
 
         Button reset = new Button(this);
         reset.setText("Reset all effects to defaults");
@@ -849,6 +867,138 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    // ---- Updates -----------------------------------------------------------
+
+    private void checkForUpdate(boolean userAsked) {
+        if (userAsked) {
+            Toast.makeText(this, "Checking for updates…", Toast.LENGTH_SHORT).show();
+        }
+        executor.execute(() -> {
+            Updater.Release release = null;
+            String error = null;
+            try {
+                release = Updater.checkForUpdate(this);
+            } catch (java.io.IOException e) {
+                error = e.getMessage();
+            }
+            Updater.Release found = release;
+            String problem = error;
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                if (found != null) {
+                    availableUpdate = found;
+                    buildControls();
+                } else if (userAsked) {
+                    Toast.makeText(this, problem != null ? "Couldn't check for updates: " + problem
+                            : "You have the latest version.", Toast.LENGTH_LONG).show();
+                }
+            });
+        });
+    }
+
+    private void addUpdateBanner() {
+        LinearLayout banner = new LinearLayout(this);
+        banner.setOrientation(LinearLayout.HORIZONTAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setBackgroundColor(getColor(R.color.surface));
+        banner.setPadding(dp(16), dp(8), dp(8), dp(8));
+        TextView text = new TextView(this);
+        text.setText("Resona " + availableUpdate.version + " is available");
+        text.setTextColor(getColor(R.color.text_primary));
+        text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        Button update = new Button(this, null, android.R.attr.borderlessButtonStyle);
+        update.setText("Update");
+        update.setTextColor(getColor(R.color.accent));
+        update.setOnClickListener(v -> confirmUpdate(availableUpdate));
+        banner.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        banner.addView(update);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
+        controls.addView(banner, lp);
+    }
+
+    private void confirmUpdate(Updater.Release release) {
+        String notes = release.notes.isEmpty() ? "Bug fixes and improvements." : release.notes;
+        new AlertDialog.Builder(this)
+                .setTitle("Update to Resona " + release.version)
+                .setMessage(notes + "\n\nYour wallpaper, looks and settings stay as they are. "
+                        + "Android will ask you to confirm the install.")
+                .setPositiveButton("Update now", (d, w) -> startUpdate(release))
+                .setNegativeButton("Later", null)
+                .show();
+    }
+
+    private void startUpdate(Updater.Release release) {
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Allow Resona to install updates")
+                    .setMessage("Android needs your OK once for Resona to install its own updates. "
+                            + "Turn on \"Allow from this source\" on the next screen, come back, and tap Update again.")
+                    .setPositiveButton("Open settings", (d, w) -> {
+                        try {
+                            startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    Uri.parse("package:" + getPackageName())));
+                        } catch (ActivityNotFoundException e) {
+                            Toast.makeText(this, "Couldn't open the settings screen.", Toast.LENGTH_LONG).show();
+                        }
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+            return;
+        }
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(16), dp(24), dp(8));
+        android.widget.ProgressBar bar = new android.widget.ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(1000);
+        TextView status = new TextView(this);
+        status.setTextColor(getColor(R.color.text_secondary));
+        status.setText("Downloading…");
+        box.addView(bar);
+        box.addView(status);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Updating Resona")
+                .setView(box)
+                .setCancelable(false)
+                .create();
+        dialog.show();
+
+        executor.execute(() -> {
+            String error = null;
+            try {
+                java.io.File apk = Updater.download(this, release, (done, total) -> mainHandler.post(() -> {
+                    if (total > 0) {
+                        bar.setProgress((int) (done * 1000 / total));
+                        status.setText(String.format(Locale.US, "Downloading… %.1f of %.1f MB",
+                                done / 1048576f, total / 1048576f));
+                    }
+                }));
+                mainHandler.post(() -> status.setText("Checking the download…"));
+                error = Updater.verify(this, apk);
+                if (error == null) {
+                    Updater.install(this, apk);
+                }
+            } catch (java.io.IOException e) {
+                error = "Update failed: " + e.getMessage();
+            }
+            String problem = error;
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                dialog.dismiss();
+                if (problem != null) {
+                    Toast.makeText(this, problem, Toast.LENGTH_LONG).show();
+                }
+            });
+        });
     }
 
     // ---- Sync calibration --------------------------------------------------
