@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Play/pause only: the whole widget is one button. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/widget_play_pause"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_margin="2dp"
+        android:contentDescription="@string/widget_play_pause"
+        android:padding="10dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_widget_play_pause" />
+</FrameLayout>

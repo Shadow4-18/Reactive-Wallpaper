@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the widget picker shows on Android 11 and older. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/widget_backdrop" />
+    <item
+        android:width="32dp"
+        android:height="32dp"
+        android:drawable="@drawable/ic_widget_previous"
+        android:gravity="center_vertical|start"
+        android:left="16dp" />
+    <item
+        android:width="32dp"
+        android:height="32dp"
+        android:drawable="@drawable/ic_widget_play_pause"
+        android:gravity="center" />
+    <item
+        android:width="32dp"
+        android:height="32dp"
+        android:drawable="@drawable/ic_widget_next"
+        android:gravity="center_vertical|end"
+        android:right="16dp" />
+</layer-list>

@@ -371,6 +371,23 @@ public class MainActivity extends Activity {
             restartAudio();
         });
 
+        LinearLayout widget = section("Home screen media buttons", false);
+        label(widget, "A widget with previous, play/pause and next that can be faint or completely "
+                + "invisible, so your screen shows only the wallpaper.");
+        Button addWidget = new Button(this);
+        addWidget.setText("Add media buttons to home screen");
+        addWidget.setOnClickListener(v -> addMediaWidget());
+        widget.addView(addWidget, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        toggle(widget, "Show where the buttons are", () -> MediaWidgetProvider.revealing(this),
+                v -> MediaWidgetProvider.setRevealing(this, v));
+        TextView widgetHint = new TextView(this);
+        widgetHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        widgetHint.setTextColor(getColor(R.color.text_secondary));
+        widgetHint.setText("Outlines the buttons on every Resona widget until you turn this off. "
+                + "Long-press a widget (Android 12+) to change how visible it is.");
+        widget.addView(widgetHint);
+
         LinearLayout battery = section("Battery", false);
         label(battery, "Battery saver: lower frame rate and half the particles");
         choice(battery, new String[] {"Off", "Auto", "Always"},
@@ -867,6 +884,18 @@ public class MainActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void addMediaWidget() {
+        android.appwidget.AppWidgetManager manager = android.appwidget.AppWidgetManager.getInstance(this);
+        ComponentName provider = new ComponentName(this, MediaWidgetProvider.class);
+        if (manager.isRequestPinAppWidgetSupported()) {
+            // The launcher asks the user to place it.
+            manager.requestPinAppWidget(provider, null, null);
+        } else {
+            Toast.makeText(this, "Long-press your home screen, choose Widgets, and find Resona.",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     // ---- Updates -----------------------------------------------------------

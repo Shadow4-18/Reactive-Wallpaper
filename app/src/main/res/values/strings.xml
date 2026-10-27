@@ -14,4 +14,9 @@
     <string name="image_failed">Couldn\'t open that file. Try a JPG, PNG, GIF or video.</string>
     <string name="pick_from_list">Pick \"Resona\" from the list.</string>
     <string name="no_live_wallpaper">This phone doesn\'t support live wallpapers.</string>
+    <string name="widget_name">Resona media buttons</string>
+    <string name="widget_description">Play, pause and skip, as visible or invisible as you like.</string>
+    <string name="widget_previous">Previous track</string>
+    <string name="widget_play_pause">Play or pause</string>
+    <string name="widget_next">Next track</string>
 </resources>

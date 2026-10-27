@@ -30,6 +30,10 @@ music or video is playing on your phone.
 - **Lock screen look:** show a different saved look while the phone is locked.
 - **Export and import looks** as `.resona` files (settings plus image and
   painted glow) to back them up or share them.
+- **Invisible media buttons:** a home-screen widget with previous, play/pause
+  and next that can be faint or fully invisible (still tappable), with a
+  haptic tick on press and an outline mode for learning where the buttons
+  are. Row, column or play/pause-only layouts.
 - **Looks (presets):** save the current settings, optionally with the image,
   as a named look and switch between looks with one tap. Long-press a look to
   update, rename or delete it. Built-in starters: Neon glow, Halo ring, Club
