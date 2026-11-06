@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_PAINT = 3;
     private static final int REQUEST_EXPORT = 4;
     private static final int REQUEST_IMPORT = 5;
+    private static final int REQUEST_DIAGNOSTICS = 6;
     private static final int SEEK_STEPS = 1000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -462,6 +463,17 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         toggle(about, "Check automatically when opening the app",
                 () -> Updater.autoCheckEnabled(this), v -> Updater.setAutoCheck(this, v));
+        Button diagnostics = new Button(this);
+        diagnostics.setText("Export diagnostics");
+        diagnostics.setOnClickListener(v -> exportDiagnostics());
+        about.addView(diagnostics, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        TextView diagnosticsHint = new TextView(this);
+        diagnosticsHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        diagnosticsHint.setTextColor(getColor(R.color.text_secondary));
+        diagnosticsHint.setText("Saves a text report (phone, settings, recent crashes and app log) to send "
+                + "when something goes wrong. No pictures or notification contents are included.");
+        about.addView(diagnosticsHint);
 
         Button reset = new Button(this);
         reset.setText("Reset all effects to defaults");
@@ -954,6 +966,36 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void exportDiagnostics() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        String stamp = new java.text.SimpleDateFormat("yyyy-MM-dd-HHmm", Locale.US).format(new java.util.Date());
+        intent.putExtra(Intent.EXTRA_TITLE, "resona-diagnostics-" + stamp + ".txt");
+        try {
+            startActivityForResult(intent, REQUEST_DIAGNOSTICS);
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "No app available to save files.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void finishDiagnostics(Uri uri) {
+        executor.execute(() -> {
+            String message;
+            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) {
+                    throw new java.io.IOException("Could not open the file");
+                }
+                out.write(Diagnostics.report(this).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                message = "Diagnostics saved";
+            } catch (java.io.IOException | SecurityException e) {
+                message = "Couldn't save diagnostics: " + e.getMessage();
+            }
+            String text = message;
+            mainHandler.post(() -> Toast.makeText(this, text, Toast.LENGTH_LONG).show());
+        });
+    }
+
     // ---- Updates -----------------------------------------------------------
 
     private void checkForUpdate(boolean userAsked) {
@@ -1279,6 +1321,12 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_DIAGNOSTICS) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                finishDiagnostics(data.getData());
+            }
+            return;
+        }
         if (requestCode == REQUEST_EXPORT) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
                 finishExport(data.getData());
