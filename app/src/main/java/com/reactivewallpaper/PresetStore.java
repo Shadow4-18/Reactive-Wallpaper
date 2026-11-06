@@ -335,7 +335,9 @@ final class PresetStore {
         if (preset.hasImage && imageFile(context, preset.id).length() > 0) {
             ImageStore.copy(picture(context, preset.id), ImageStore.draft(context));
             next.imageVersion = System.currentTimeMillis();
-            next.mediaType = fromJson(preset.look).mediaType;
+            WallpaperSettings own = fromJson(preset.look);
+            next.mediaType = own.mediaType;
+            next.copyFramingFrom(own);
         }
         next.saveDraft(context);
         return next;

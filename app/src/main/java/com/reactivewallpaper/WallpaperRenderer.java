@@ -31,6 +31,14 @@ final class WallpaperRenderer {
 
     private Bitmap image;
     private Bitmap mask;
+    /** A tiny copy of the image, scaled up behind it as a soft blurred backdrop. */
+    private Bitmap backdrop;
+    private final Paint backdropPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Matrix backdropMatrix = new Matrix();
+    /** False for backgrounds already made for the screen (album art), which ignore framing. */
+    private boolean framed = true;
+    /** True once the launcher reports more than one home-screen page. */
+    private boolean paged;
     private MediaBackground media;
     private Bitmap mediaFrame;
     private final Matrix mediaMatrix = new Matrix();
@@ -83,9 +91,19 @@ final class WallpaperRenderer {
             living.release();
             living = null;
         }
+        if (backdrop != null) {
+            backdrop.recycle();
+            backdrop = null;
+        }
         image = bitmap;
         mask = glowMask;
         accentHues = bitmap != null ? ImageStore.accentHues(bitmap) : DEFAULT_HUES;
+        if (bitmap != null) {
+            // Scaling a tiny copy back up with filtering blurs it smoothly, for almost no cost.
+            int bw = 24;
+            int bh = Math.max(1, Math.round(24f * bitmap.getHeight() / bitmap.getWidth()));
+            backdrop = Bitmap.createScaledBitmap(bitmap, bw, bh, true);
+        }
         if (bitmap != null) {
             living = new LivingImage(bitmap, mask, accentHues, WallpaperSettings.DEFAULT_COVERAGE);
         }
@@ -120,9 +138,18 @@ final class WallpaperRenderer {
         tiltY = y;
     }
 
-    /** Home-screen position, -1 (first page) .. 1 (last page). */
-    void setSwipe(float position) {
+    /**
+     * Home-screen position, -1 (first page) .. 1 (last page).
+     * @param pages whether the launcher really scrolls between pages (else swipe parallax is off)
+     */
+    void setSwipe(float position, boolean pages) {
         swipe = position;
+        paged = pages;
+    }
+
+    /** False for backgrounds already shaped for the screen, such as album art. */
+    void setFramed(boolean framed) {
+        this.framed = framed;
     }
 
     /** Battery saving: draws fewer particles. */
@@ -186,27 +213,29 @@ final class WallpaperRenderer {
         float dx = 0f;
         float dy = 0f;
         float zoom = 1f;
+        // How far motion effects can move the picture, as a fraction of the screen.
+        float reach = 0f;
+        float side = Math.max(1, Math.min(w, h));
         if (s.pulse > 0f) {
             zoom += s.pulse * (0.08f * bass + 0.03f * beat);
         }
         if (s.sway > 0f) {
             // Slow sway so the picture never sits completely still.
-            zoom += s.sway * (0.03f + 0.012f * (float) Math.sin(swayPhase * 0.21f));
+            zoom += s.sway * 0.012f * (1f + (float) Math.sin(swayPhase * 0.21f));
             dx += (float) Math.sin(swayPhase * 0.13f) * 5f * density * s.sway;
             dy += (float) Math.cos(swayPhase * 0.17f) * 5f * density * s.sway;
+            reach += 5f * density * s.sway / side;
         }
         if (s.tiltParallax > 0f || s.swipeParallax > 0f) {
             dx += parallaxX;
             dy += parallaxY;
-            // Overscan so shifting never reveals the edges.
-            zoom += 0.05f * s.tiltParallax + 0.08f * s.swipeParallax;
+            reach += 0.025f * s.tiltParallax + (paged ? 0.04f * s.swipeParallax : 0f);
         }
         if (s.shake > 0f) {
             float amount = 9f * density * s.shake * beat;
             dx += (float) Math.sin(time * 61f) * amount;
             dy += (float) Math.cos(time * 47f) * amount;
-            // Overscan so shaking never reveals the edges.
-            zoom += 0.05f * s.shake;
+            reach += 9f * density * s.shake / side;
         }
 
         if (image == null) {
@@ -219,12 +248,43 @@ final class WallpaperRenderer {
             return;
         }
 
-        canvas.drawColor(Color.BLACK);
         int bw = image.getWidth();
         int bh = image.getHeight();
-        float scale = Math.max(w / (float) bw, h / (float) bh);
-        matrix.setScale(scale, scale);
-        matrix.postTranslate((w - bw * scale) / 2f + dx, (h - bh * scale) / 2f + dy);
+        float sx;
+        float sy;
+        switch (framed ? s.fitMode : WallpaperSettings.FIT_FILL) {
+            case WallpaperSettings.FIT_FIT:
+                sx = sy = Math.min(w / (float) bw, h / (float) bh);
+                break;
+            case WallpaperSettings.FIT_STRETCH:
+                sx = w / (float) bw;
+                sy = h / (float) bh;
+                break;
+            case WallpaperSettings.FIT_WIDTH:
+                sx = sy = w / (float) bw;
+                break;
+            case WallpaperSettings.FIT_HEIGHT:
+                sx = sy = h / (float) bh;
+                break;
+            default:
+                sx = sy = Math.max(w / (float) bw, h / (float) bh);
+                break;
+        }
+        float userZoom = framed ? s.imageZoom : 1f;
+        sx *= userZoom;
+        sy *= userZoom;
+        float panX = framed ? s.imagePanX * w : 0f;
+        float panY = framed ? s.imagePanY * h : 0f;
+        // Only a picture that covers the screen needs zooming to keep its edges hidden in motion.
+        boolean covers = bw * sx >= w - 1 && bh * sy >= h - 1
+                && Math.abs(panX) <= (bw * sx - w) / 2f + 1 && Math.abs(panY) <= (bh * sy - h) / 2f + 1;
+        if (covers && (!framed || s.hideEdges)) {
+            zoom += 2f * reach;
+        }
+
+        drawBackdrop(canvas, w, h, s, covers);
+        matrix.setScale(sx, sy);
+        matrix.postTranslate((w - bw * sx) / 2f + panX + dx, (h - bh * sy) / 2f + panY + dy);
         // Zoom around the ring when there is one, so artwork under it stays lined up.
         float pivotY = s.style == WallpaperSettings.STYLE_CIRCLE ? h * s.circleY : h / 2f;
         matrix.postScale(zoom, zoom, w / 2f, pivotY);
@@ -234,6 +294,20 @@ final class WallpaperRenderer {
         } else {
             canvas.drawBitmap(image, matrix, imagePaint);
         }
+    }
+
+    /** Fills what the picture may not cover: black, or a dimmed, very blurred copy of it. */
+    private void drawBackdrop(Canvas canvas, int w, int h, WallpaperSettings s, boolean covers) {
+        canvas.drawColor(Color.BLACK);
+        if (covers || backdrop == null || s.edgeStyle != WallpaperSettings.EDGES_BLUR) {
+            return;
+        }
+        float scale = Math.max(w / (float) backdrop.getWidth(), h / (float) backdrop.getHeight());
+        backdropMatrix.setScale(scale, scale);
+        backdropMatrix.postTranslate((w - backdrop.getWidth() * scale) / 2f, (h - backdrop.getHeight() * scale) / 2f);
+        backdropPaint.setColorFilter(imagePaint.getColorFilter());
+        backdropPaint.setAlpha(140);
+        canvas.drawBitmap(backdrop, backdropMatrix, backdropPaint);
     }
 
     /** Maps the current media frame onto the still image's place on screen, turning it upright. */
@@ -441,7 +515,8 @@ final class WallpaperRenderer {
         smoothTiltY += (tiltY - smoothTiltY) * follow;
         smoothSwipe += (swipe - smoothSwipe) * Math.min(1f, dt * 12f);
         // The picture moves against the tilt, like looking through a window.
-        parallaxX = -(smoothTiltX * s.tiltParallax * 0.025f + smoothSwipe * s.swipeParallax * 0.04f) * w;
+        float swipeAmount = paged ? s.swipeParallax : 0f;
+        parallaxX = -(smoothTiltX * s.tiltParallax * 0.025f + smoothSwipe * swipeAmount * 0.04f) * w;
         parallaxY = -smoothTiltY * s.tiltParallax * 0.025f * h;
     }
 

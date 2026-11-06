@@ -219,10 +219,11 @@ public class ReactiveWallpaperService extends WallpaperService {
         public void onOffsetsChanged(float xOffset, float yOffset, float xOffsetStep, float yOffsetStep,
                                      int xPixelOffset, int yPixelOffset) {
             // Launchers with a single page report 0.5 or 0; both mean "centered".
-            float position = xOffsetStep > 0f && xOffsetStep < 1f ? xOffset * 2f - 1f : 0f;
-            home.setSwipe(position);
+            boolean pages = xOffsetStep > 0f && xOffsetStep < 1f;
+            float position = pages ? xOffset * 2f - 1f : 0f;
+            home.setSwipe(position, pages);
             if (lock != null) {
-                lock.setSwipe(position);
+                lock.setSwipe(position, pages);
             }
         }
 
@@ -259,6 +260,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             WallpaperSettings s = PresetStore.fromJson(preset.look).keepDeviceSettingsFrom(live);
             if (preset.hasImage) {
                 s.mediaType = own.mediaType;
+                s.copyFramingFrom(own);
                 return new Look(s, PresetStore.picture(context, preset.id));
             }
             return new Look(s, ImageStore.live(context));
@@ -322,13 +324,15 @@ public class ReactiveWallpaperService extends WallpaperService {
             }
             LookSlot.Background background;
             if (useArt) {
-                background = new LookSlot.Background(AlbumArt.compose(art, width, height, s.albumArtStyle), null, null);
+                background = new LookSlot.Background(
+                        AlbumArt.compose(art, width, height, s.albumArtStyle), null, null, false);
             } else {
                 background = new LookSlot.Background(
                         ImageStore.load(look.picture.image, width, height),
                         ImageStore.loadMask(look.picture.mask),
                         s.mediaType != WallpaperSettings.MEDIA_IMAGE
-                                ? MediaBackground.open(context, look.picture.media, s.mediaType) : null);
+                                ? MediaBackground.open(context, look.picture.media, s.mediaType) : null,
+                        true);
             }
             slot.setBackground(key, background, fade && slot.hasBackground());
         }

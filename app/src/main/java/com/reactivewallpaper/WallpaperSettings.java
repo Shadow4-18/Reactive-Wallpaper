@@ -34,6 +34,15 @@ final class WallpaperSettings {
     static final int PARTICLE_BUBBLES = 3;
     static final int PARTICLE_STREAKS = 4;
 
+    static final int FIT_FILL = 0;
+    static final int FIT_FIT = 1;
+    static final int FIT_STRETCH = 2;
+    static final int FIT_WIDTH = 3;
+    static final int FIT_HEIGHT = 4;
+
+    static final int EDGES_BLUR = 0;
+    static final int EDGES_BLACK = 1;
+
     static final int MEDIA_IMAGE = 0;
     /** An animated GIF or WebP. */
     static final int MEDIA_ANIMATED = 1;
@@ -137,6 +146,18 @@ final class WallpaperSettings {
     long imageVersion;
     /** What kind of background {@link #imageVersion} refers to; travels with the image. */
     int mediaType = MEDIA_IMAGE;
+
+    // Framing: how the picture sits on screen. Travels with the image, like its type.
+    int fitMode = FIT_FILL;
+    /** 0.5 .. 3, on top of the fit. */
+    float imageZoom = 1f;
+    /** -0.5 .. 0.5 of the screen width/height. */
+    float imagePanX = 0f;
+    float imagePanY = 0f;
+    /** What shows where the picture doesn't cover the screen. */
+    int edgeStyle = EDGES_BLUR;
+    /** Zoom in just enough that motion effects never reveal the edges. */
+    boolean hideEdges = true;
 
     /** Where settings are read from: the app's preferences or a saved look. */
     interface Reader {
@@ -305,6 +326,12 @@ final class WallpaperSettings {
         s.sleepMinutes = p.getInt("sleepMinutes", s.sleepMinutes);
         s.imageVersion = p.getLong("imageVersion", s.imageVersion);
         s.mediaType = p.getInt("mediaType", s.mediaType);
+        s.fitMode = p.getInt("fitMode", s.fitMode);
+        s.imageZoom = p.getFloat("imageZoom", s.imageZoom);
+        s.imagePanX = p.getFloat("imagePanX", s.imagePanX);
+        s.imagePanY = p.getFloat("imagePanY", s.imagePanY);
+        s.edgeStyle = p.getInt("edgeStyle", s.edgeStyle);
+        s.hideEdges = p.getBoolean("hideEdges", s.hideEdges);
         return s;
     }
 
@@ -388,6 +415,12 @@ final class WallpaperSettings {
         w.putInt("sleepMinutes", sleepMinutes);
         w.putLong("imageVersion", imageVersion);
         w.putInt("mediaType", mediaType);
+        w.putInt("fitMode", fitMode);
+        w.putFloat("imageZoom", imageZoom);
+        w.putFloat("imagePanX", imagePanX);
+        w.putFloat("imagePanY", imagePanY);
+        w.putInt("edgeStyle", edgeStyle);
+        w.putBoolean("hideEdges", hideEdges);
     }
 
     /** Defaults for every effect, keeping the chosen image and audio source. */
@@ -402,8 +435,26 @@ final class WallpaperSettings {
     WallpaperSettings keepDeviceSettingsFrom(WallpaperSettings current) {
         imageVersion = current.imageVersion;
         mediaType = current.mediaType;
+        copyFramingFrom(current);
         copyDeviceSettingsFrom(current);
         return this;
+    }
+
+    /** Copies how the picture is framed, which belongs to the picture rather than the look. */
+    void copyFramingFrom(WallpaperSettings other) {
+        fitMode = other.fitMode;
+        imageZoom = other.imageZoom;
+        imagePanX = other.imagePanX;
+        imagePanY = other.imagePanY;
+        edgeStyle = other.edgeStyle;
+        hideEdges = other.hideEdges;
+    }
+
+    /** Back to centered at the fit's own size, for a newly chosen picture. */
+    void resetPosition() {
+        imageZoom = 1f;
+        imagePanX = 0f;
+        imagePanY = 0f;
     }
 
     /**

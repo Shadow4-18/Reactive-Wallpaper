@@ -108,6 +108,33 @@ public class MainActivity extends Activity {
         preview.bind(renderer, analyzer, settings);
         tilt = new TiltSensor(this);
         preview.setTiltSensor(tilt);
+        preview.setFramingListener(new PreviewView.FramingListener() {
+            @Override
+            public void onMove(float dx, float dy) {
+                settings.imagePanX = clamp(settings.imagePanX + dx, -0.5f, 0.5f);
+                settings.imagePanY = clamp(settings.imagePanY + dy, -0.5f, 0.5f);
+                preview.setSettings(settings);
+            }
+
+            @Override
+            public void onZoom(float factor) {
+                settings.imageZoom = clamp(settings.imageZoom * factor, 0.5f, 3f);
+                preview.setSettings(settings);
+            }
+
+            @Override
+            public void onReset() {
+                settings.resetPosition();
+                preview.setSettings(settings);
+            }
+
+            @Override
+            public void onGestureEnd() {
+                saveDraft();
+                // Move the zoom and position sliders to match.
+                buildControls();
+            }
+        });
         artSource = new AlbumArtSource(this, (key, cover) -> {
             if (art != null) {
                 art.recycle();
@@ -195,6 +222,29 @@ public class MainActivity extends Activity {
         shareRow.addView(exportLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         looks.addView(shareRow);
         refreshLooks();
+
+        LinearLayout fit = section("Image fit", true);
+        choiceColumn(fit, new String[] {"Fill (crop to fill the screen)", "Fit (show the whole image)",
+                        "Stretch", "Fit width", "Fit height"},
+                new int[] {WallpaperSettings.FIT_FILL, WallpaperSettings.FIT_FIT, WallpaperSettings.FIT_STRETCH,
+                        WallpaperSettings.FIT_WIDTH, WallpaperSettings.FIT_HEIGHT},
+                s.fitMode, v -> s.fitMode = v);
+        slider(fit, "Zoom", 0.5f, 3f, () -> s.imageZoom, v -> s.imageZoom = v, v -> Math.round(v * 100) + "%");
+        slider(fit, "Horizontal position", -0.5f, 0.5f, () -> s.imagePanX, v -> s.imagePanX = v,
+                MainActivity::position);
+        slider(fit, "Vertical position", -0.5f, 0.5f, () -> s.imagePanY, v -> s.imagePanY = v,
+                MainActivity::position);
+        label(fit, "Edges (where the image doesn't reach)");
+        choice(fit, new String[] {"Blurred image", "Black"},
+                new int[] {WallpaperSettings.EDGES_BLUR, WallpaperSettings.EDGES_BLACK},
+                s.edgeStyle, v -> s.edgeStyle = v);
+        toggle(fit, "Zoom in slightly so motion never shows the edges",
+                () -> s.hideEdges, v -> s.hideEdges = v);
+        TextView fitHint = new TextView(this);
+        fitHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        fitHint.setTextColor(getColor(R.color.text_secondary));
+        fitHint.setText("Tip: drag the preview to move the image, pinch to zoom, double-tap to reset.");
+        fit.addView(fitHint);
 
         LinearLayout glow = section("Glow (the image's own colors)", true);
         slider(glow, "Bass glow", 0f, 3f, () -> s.bassGlow, v -> s.bassGlow = v, MainActivity::percent);
@@ -1181,6 +1231,7 @@ public class MainActivity extends Activity {
         if (settings.albumArt && art != null) {
             // Show the playing song's cover, as the wallpaper will.
             renderer.setImage(AlbumArt.compose(art, w, h, settings.albumArtStyle), null);
+            renderer.setFramed(false);
             renderer.setMedia(null);
             preview.invalidate();
             return;
@@ -1197,6 +1248,7 @@ public class MainActivity extends Activity {
                     return;
                 }
                 renderer.setImage(bitmap, mask);
+                renderer.setFramed(true);
                 // Videos and GIFs open on the main thread (their players call back here).
                 renderer.setMedia(mediaType != WallpaperSettings.MEDIA_IMAGE
                         ? MediaBackground.open(this, ImageStore.draft(this).media, mediaType) : null);
@@ -1267,6 +1319,8 @@ public class MainActivity extends Activity {
                 }
                 settings.imageVersion = System.currentTimeMillis();
                 settings.mediaType = mediaType;
+                // A new picture starts centered; the fill mode the user prefers stays.
+                settings.resetPosition();
                 saveDraft();
                 loadPreviewImage();
             });
@@ -1451,6 +1505,15 @@ public class MainActivity extends Activity {
     private static String percent(float v) {
         int p = Math.round(v * 100);
         return p == 0 ? "Off" : p + "%";
+    }
+
+    private static String position(float v) {
+        int p = Math.round(v * 100);
+        return p == 0 ? "Centered" : (p > 0 ? "+" : "") + p + "%";
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     private static String speed(float v) {

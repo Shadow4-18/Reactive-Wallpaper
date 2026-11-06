@@ -13,6 +13,10 @@ music or video is playing on your phone.
   the screen and turned upright. Animated GIF/WebP needs Android 9+, video
   (muted, looping) Android 10+. Moving backgrounds glow wherever each frame is
   bright.
+- **Image fit:** Fill, Fit, Stretch, Fit width or Fit height, plus zoom and
+  position (sliders, or drag/pinch the preview; double-tap resets). Uncovered
+  edges show a blurred copy of the image or black. Framing is saved with the
+  image in looks.
 - **Album art mode:** show the playing song's cover (full screen, or as a card
   over a blurred copy) with all the effects, falling back to your image when
   nothing plays.

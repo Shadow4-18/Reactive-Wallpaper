@@ -22,6 +22,7 @@ final class LookSlot {
     private float tiltX;
     private float tiltY;
     private float swipe;
+    private boolean paged;
 
     LookSlot(float density, WallpaperSettings settings) {
         this.density = density;
@@ -43,10 +44,11 @@ final class LookSlot {
     void setBackground(String key, Background background, boolean fade) {
         WallpaperRenderer next = new WallpaperRenderer(density);
         next.setImage(background.image, background.mask);
+        next.setFramed(background.framed);
         next.setMedia(background.media);
         next.setMediaPlaying(playing);
         next.setTilt(tiltX, tiltY);
-        next.setSwipe(swipe);
+        next.setSwipe(swipe, paged);
         if (previous != null) {
             previous.release();
             previous = null;
@@ -98,13 +100,14 @@ final class LookSlot {
         }
     }
 
-    void setSwipe(float position) {
+    void setSwipe(float position, boolean pages) {
         swipe = position;
+        paged = pages;
         if (renderer != null) {
-            renderer.setSwipe(position);
+            renderer.setSwipe(position, pages);
         }
         if (previous != null) {
-            previous.setSwipe(position);
+            previous.setSwipe(position, pages);
         }
     }
 
@@ -139,11 +142,15 @@ final class LookSlot {
         final android.graphics.Bitmap image;
         final android.graphics.Bitmap mask;
         final MediaBackground media;
+        /** False for backgrounds already shaped for the screen (album art), which skip framing. */
+        final boolean framed;
 
-        Background(android.graphics.Bitmap image, android.graphics.Bitmap mask, MediaBackground media) {
+        Background(android.graphics.Bitmap image, android.graphics.Bitmap mask, MediaBackground media,
+                   boolean framed) {
             this.image = image;
             this.mask = mask;
             this.media = media;
+            this.framed = framed;
         }
     }
 }
