@@ -2,6 +2,8 @@ package com.reactivewallpaper;
 
 import android.os.SystemClock;
 
+import java.util.function.LongSupplier;
+
 /**
  * Turns raw FFT magnitudes into smoothed, auto-gained frequency bands plus a
  * bass level, a mids/highs level and a beat pulse, ready for drawing.
@@ -17,6 +19,9 @@ final class AudioAnalyzer {
     private static final float BASS_MAX_FREQ = 160f;
     private static final long STALE_MS = 400;
     private static final int HISTORY = 96;
+
+    /** Milliseconds of uptime. Tests swap in a fake clock to simulate time exactly. */
+    static LongSupplier clock = SystemClock::uptimeMillis;
 
     // Ring buffer of submitted frames, guarded by lock.
     private final Object lock = new Object();
@@ -97,7 +102,7 @@ final class AudioAnalyzer {
                 history[slot] = new float[mags.length];
             }
             System.arraycopy(mags, 0, history[slot], 0, mags.length);
-            historyTime[slot] = SystemClock.uptimeMillis();
+            historyTime[slot] = clock.getAsLong();
             historyRate[slot] = sampleRate;
             historyHead = slot;
             submitted++;
@@ -106,7 +111,7 @@ final class AudioAnalyzer {
 
     /** Advances by dt seconds using the audio frame that is due now. */
     void update(float dt) {
-        long now = SystemClock.uptimeMillis();
+        long now = clock.getAsLong();
         long due = now - delayMs;
         int binCount = 0;
         int rate = 0;

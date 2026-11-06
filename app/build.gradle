@@ -12,6 +12,7 @@ android {
         targetSdk = 35
         versionCode = 18
         versionName = '2.7'
+        testInstrumentationRunner = 'androidx.test.runner.AndroidJUnitRunner'
     }
 
     // Releases are signed with the private Resona key, which only the release
@@ -48,4 +49,18 @@ android {
         abortOnError = false
         checkReleaseBuilds = false
     }
+
+    testOptions {
+        // Plain JVM tests cover pure logic; Android calls there just return defaults.
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    // Test-only libraries: none of these ship in the app.
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
 }
