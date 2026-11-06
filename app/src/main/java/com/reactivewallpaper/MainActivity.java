@@ -161,8 +161,10 @@ public class MainActivity extends Activity {
         if (!AudioController.hasPermission(this)) {
             requestAudioPermission();
         }
-        if (Updater.claimAutoCheck(this)) {
-            checkForUpdate(false);
+        // An update found before shows at once, even offline, until it's installed.
+        availableUpdate = Updater.cachedUpdate(this);
+        if (availableUpdate != null) {
+            buildControls();
         }
     }
 
@@ -487,6 +489,10 @@ public class MainActivity extends Activity {
         updatePermissionNote();
         // The wallpaper may have been set or changed while we were away.
         updateApplyState();
+        // Coming back to the app (not just launching it) is when a new release is noticed.
+        if (Updater.claimAutoCheck(this)) {
+            checkForUpdate(false);
+        }
         tilt.start();
         renderer.setMediaPlaying(true);
         updateArtSource();

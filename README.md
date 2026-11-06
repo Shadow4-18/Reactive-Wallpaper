@@ -103,7 +103,8 @@ replaces whatever live wallpaper is active.
 ## Updates
 
 From version 2.1, Resona checks this repository's latest release when you
-open it (at most every 12 hours; you can turn that off under About & updates)
+open it or come back to it (at most every 5 minutes, using cached
+conditional requests; you can turn that off under About & updates)
 and shows a banner when a newer version exists. **Update** downloads it,
 checks it's a newer Resona signed with the same key, and hands it to Android's
 installer, which asks you to confirm. Android also asks once for permission to

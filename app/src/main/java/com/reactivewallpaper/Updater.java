@@ -35,7 +35,8 @@ final class Updater {
             "https://api.github.com/repos/Shadow4-18/Reactive-Wallpaper/releases/latest";
     private static final String APK_NAME = "Resona.apk";
     private static final long MAX_APK_BYTES = 100L << 20;
-    private static final long CHECK_INTERVAL_MS = 12L * 60 * 60 * 1000;
+    /** Opening the app checks at most this often (answers are cached, so it stays cheap). */
+    private static final long CHECK_INTERVAL_MS = 5L * 60 * 1000;
     private static final String PREFS = "updates";
 
     static final class Release {
@@ -89,19 +90,51 @@ final class Updater {
 
     /** The latest release if it is newer than this app, else null. Call off the main thread. */
     static Release checkForUpdate(Context context) throws IOException {
+        SharedPreferences p = prefs(context);
         HttpURLConnection connection = open(LATEST_RELEASE);
         connection.setRequestProperty("Accept", "application/vnd.github+json");
+        // Ask "changed since last time?": GitHub answers that without using up its rate limit.
+        String etag = p.getString("etag", null);
+        String cached = p.getString("latestBody", null);
+        if (etag != null && cached != null) {
+            connection.setRequestProperty("If-None-Match", etag);
+        }
+        String body;
         try {
-            if (connection.getResponseCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+            int code = connection.getResponseCode();
+            if (code == HttpURLConnection.HTTP_NOT_MODIFIED && cached != null) {
+                body = cached;
+            } else if (code == HttpURLConnection.HTTP_NOT_FOUND) {
                 return null;
+            } else if (code != HttpURLConnection.HTTP_OK) {
+                throw new IOException("GitHub answered " + code);
+            } else {
+                try (InputStream in = connection.getInputStream()) {
+                    body = readText(in, 1L << 20);
+                }
+                p.edit().putString("etag", connection.getHeaderField("ETag")).putString("latestBody", body).apply();
             }
-            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                throw new IOException("GitHub answered " + connection.getResponseCode());
-            }
-            String body;
-            try (InputStream in = connection.getInputStream()) {
-                body = readText(in, 1L << 20);
-            }
+        } finally {
+            connection.disconnect();
+        }
+        return parseRelease(context, body);
+    }
+
+    /** The last known release, from the cache, if it is newer than this app. No network. */
+    static Release cachedUpdate(Context context) {
+        String body = prefs(context).getString("latestBody", null);
+        if (body == null) {
+            return null;
+        }
+        try {
+            return parseRelease(context, body);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private static Release parseRelease(Context context, String body) throws IOException {
+        try {
             JSONObject release = new JSONObject(body);
             String tag = release.getString("tag_name");
             if (!isNewer(tag, installedVersion(context))) {
@@ -121,8 +154,6 @@ final class Updater {
             return new Release(tag.replaceFirst("^[vV]", ""), notesOf(release.optString("body")), apkUrl);
         } catch (JSONException e) {
             throw new IOException("Unexpected answer from GitHub", e);
-        } finally {
-            connection.disconnect();
         }
     }
 
