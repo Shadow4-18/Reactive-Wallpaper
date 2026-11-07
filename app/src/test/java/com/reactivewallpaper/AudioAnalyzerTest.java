@@ -100,4 +100,47 @@ public class AudioAnalyzerTest {
             assertTrue("beat at " + beat + " is off the grid", off <= 60);
         }
     }
+
+    /** Beats shown after the music stops: none, whether frames stop coming or turn silent. */
+    private List<Long> beatsAfterStop(boolean silentFrames) {
+        AudioAnalyzer.clock = () -> now;
+        AudioAnalyzer analyzer = new AudioAnalyzer(48);
+        analyzer.setTempoSync(true);
+        int bins = 512;
+        float binHz = 44100 / (2f * bins);
+        Random random = new Random(5);
+        List<Long> after = new ArrayList<>();
+        float previous = 0f;
+        long nextCapture = 0;
+        for (long t = 0; t < 9000; t += 16) {
+            while (nextCapture <= t) {
+                boolean music = nextCapture < 6000;
+                if (music || silentFrames) {
+                    float[] mags = new float[bins];
+                    float kick = (float) Math.exp(-((nextCapture / 1000f) % 0.5f) * 9);
+                    for (int k = 0; k < bins; k++) {
+                        float f = k * binHz;
+                        mags[k] = !music ? 0f : 0.01f * random.nextFloat() + (f < 150 ? 0.55f + 0.45f * kick : 0f);
+                    }
+                    now = nextCapture;
+                    analyzer.submit(mags, 44100);
+                }
+                nextCapture += 50;
+            }
+            now = t;
+            analyzer.update(0.016f);
+            float beat = analyzer.beat();
+            if (beat > previous + 0.3f && t > 6100) {
+                after.add(t);
+            }
+            previous = beat;
+        }
+        return after;
+    }
+
+    @Test
+    public void noGhostBeatsWhenTheMusicStops() {
+        assertTrue("beats after frames stopped: " + beatsAfterStop(false), beatsAfterStop(false).isEmpty());
+        assertTrue("beats through silent frames: " + beatsAfterStop(true), beatsAfterStop(true).isEmpty());
+    }
 }

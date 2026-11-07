@@ -64,6 +64,10 @@ final class AudioAnalyzer {
     private long lastGridIndex = Long.MIN_VALUE;
     /** Typical strength of detected beats, for the ones the grid fills in. */
     private float typicalBeat = 0.8f;
+    /** How loud the newest analyzed frame was (0..1), to tell music from silence. */
+    private float frameLevel;
+    /** Below this, a frame counts as silence: no beats are filled in on the grid. */
+    private static final float GRID_MIN_LEVEL = 0.04f;
 
     /** This analyzer's own clock, or null for the shared {@link #clock}. */
     private LongSupplier ownClock;
@@ -173,11 +177,16 @@ final class AudioAnalyzer {
             // Silence or no audio: let everything fall away.
             clearTargets();
             processedSequence = -1;
+            frameLevel = 0f;
         } else if (sequence != processedSequence && binCount > 1) {
             analyzeFrame(binCount, rate, frameTime, due);
             processedSequence = sequence;
         }
-        if (tempoSync && tempo.isLockedAt(due)) {
+        // Fill in beats only while music is really playing: not once frames stop coming
+        // (output unplugged, app closed) and not through silent frames (paused), however
+        // recently the tempo was heard. The tempo stays learned for when music resumes.
+        boolean playing = sequence >= 0 && frameLevel > GRID_MIN_LEVEL;
+        if (tempoSync && playing && tempo.isLockedAt(due)) {
             // A grid beat is due: show it unless a detected beat already did.
             long index = tempo.gridIndexAt(due);
             if (index != lastGridIndex) {
@@ -271,6 +280,8 @@ final class AudioAnalyzer {
             previousRaw[i] = raw[i];
         }
         float bassNorm = bassSum / Math.max(1, bassCount);
+        // Loudness against the noise floor, not the auto-gain: silence stays near 0.
+        frameLevel = Math.min(1f, frameMax / Math.max(noiseFloor * 4f, 1e-6f));
         flux /= Math.max(1, bassCount);
         bassTarget = Math.min(1f, bassNorm * sensitivity);
         highTarget = n > highStart ? highSum / (n - highStart) : 0f;
