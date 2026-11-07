@@ -113,6 +113,16 @@ final class LooksUi {
         shareRow.addView(importLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         shareRow.addView(exportLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         looks.addView(shareRow);
+        LinearLayout qrRow = new LinearLayout(activity);
+        Button shareCurrent = new Button(activity);
+        shareCurrent.setText("Share this look");
+        shareCurrent.setOnClickListener(v -> LookShare.show(activity, "My Resona look", host.settings()));
+        Button scan = new Button(activity);
+        scan.setText("Scan a look");
+        scan.setOnClickListener(v -> LookShare.scan(activity, look -> LookShare.offer(activity, look, this::refresh)));
+        qrRow.addView(shareCurrent, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        qrRow.addView(scan, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        looks.addView(qrRow);
         refresh();
     }
 
@@ -527,7 +537,7 @@ final class LooksUi {
                     Toast.LENGTH_LONG).show();
             return;
         }
-        String[] actions = {"Update with current look", "Rename", "Export", "Delete"};
+        String[] actions = {"Update with current look", "Rename", "Share as QR code or link", "Export file", "Delete"};
         new AlertDialog.Builder(activity)
                 .setTitle(preset.name)
                 .setItems(actions, (d, which) -> {
@@ -545,6 +555,8 @@ final class LooksUi {
                     } else if (which == 1) {
                         renameLookDialog(preset);
                     } else if (which == 2) {
+                        LookShare.show(activity, preset.name, PresetStore.fromJson(preset.look));
+                    } else if (which == 3) {
                         startExport(java.util.Collections.singletonList(preset), preset.name);
                     } else {
                         new AlertDialog.Builder(activity)

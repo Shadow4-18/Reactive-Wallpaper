@@ -21,10 +21,10 @@
         android:label="@string/app_name"
         android:theme="@style/AppTheme">
 
-        <!-- Ask Play services to fetch the subject detector when the app is installed. -->
+        <!-- Ask Play services to fetch the subject detector and code scanner when the app is installed. -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="subject_segment" />
+            android:value="subject_segment,barcode_ui" />
 
         <activity
             android:name=".MainActivity"
@@ -32,6 +32,13 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Shared looks: resona://look/... links (see LookCode). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="resona" android:host="look" />
             </intent-filter>
         </activity>
 

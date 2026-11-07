@@ -159,4 +159,31 @@ public class AppSmokeTest {
         instrumentation.getUiAutomation().performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK);
         SystemClock.sleep(1000);
     }
+
+    private void shell(String command) throws Exception {
+        android.os.ParcelFileDescriptor out = instrumentation.getUiAutomation().executeShellCommand(command);
+        try (java.io.InputStream in = new android.os.ParcelFileDescriptor.AutoCloseInputStream(out)) {
+            byte[] buf = new byte[1024];
+            while (in.read(buf) > 0) {
+                // Wait for the command to finish.
+            }
+        }
+    }
+
+    /** The editor on a foldable's inner screen (side by side), then the QR share dialog. */
+    @Test
+    public void wideScreenEditorAndSharing() throws Exception {
+        shell("wm size 2208x1840");
+        try {
+            SystemClock.sleep(2000);
+            Activity activity = start(MainActivity.class, null);
+            shot("10_wide_editor", 4000);
+            instrumentation.runOnMainSync(() -> LookShare.show(activity, "Test look", new WallpaperSettings()));
+            shot("11_share_qr", 2000);
+            activity.finish();
+        } finally {
+            shell("wm size reset");
+            SystemClock.sleep(2000);
+        }
+    }
 }

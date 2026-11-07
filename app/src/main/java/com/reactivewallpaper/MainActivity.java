@@ -184,6 +184,8 @@ public class MainActivity extends Activity {
         });
         buildControls();
 
+        handleLookLink(getIntent());
+
         if (!editorPrefs().getBoolean(KEY_TOUR, false)) {
             editorPrefs().edit().putBoolean(KEY_TOUR, true).apply();
             mainHandler.postDelayed(() -> showTour(0), 600);
@@ -775,13 +777,30 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Gives the preview the wallpaper's shape. On phones it sits above the
+     * settings; on wide screens (tablets, unfolded foldables, landscape) it fills
+     * most of the left column, in the screen's current shape.
+     */
     private void sizePreviewToScreen() {
         DisplayMetrics dm = getResources().getDisplayMetrics();
-        int screenW = Math.min(dm.widthPixels, dm.heightPixels);
-        int screenH = Math.max(dm.widthPixels, dm.heightPixels);
         ViewGroup.LayoutParams lp = previewFrame.getLayoutParams();
-        lp.height = (int) (dm.heightPixels * 0.38f);
-        lp.width = (int) (lp.height * screenW / (float) screenH);
+        boolean wide = getResources().getConfiguration().screenWidthDp >= 600;
+        if (wide) {
+            float aspect = dm.widthPixels / (float) Math.max(1, dm.heightPixels);
+            lp.height = (int) (dm.heightPixels * 0.72f);
+            lp.width = (int) (lp.height * aspect);
+            int maxWidth = (int) (dm.widthPixels * 0.42f * 0.9f);
+            if (lp.width > maxWidth) {
+                lp.width = maxWidth;
+                lp.height = (int) (maxWidth / aspect);
+            }
+        } else {
+            int screenW = Math.min(dm.widthPixels, dm.heightPixels);
+            int screenH = Math.max(dm.widthPixels, dm.heightPixels);
+            lp.height = (int) (dm.heightPixels * 0.38f);
+            lp.width = (int) (lp.height * screenW / (float) screenH);
+        }
         previewFrame.setLayoutParams(lp);
     }
 
@@ -1341,6 +1360,27 @@ public class MainActivity extends Activity {
                 .setNegativeButton(step == 0 ? "Skip" : null, (d, w) -> afterTour())
                 .setOnCancelListener(d -> afterTour())
                 .show();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        handleLookLink(intent);
+    }
+
+    /** A tapped resona://look/... link: offer to add the shared look. */
+    private void handleLookLink(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) {
+            return;
+        }
+        LookCode.Look look = LookCode.decode(intent.getData().toString());
+        // Handled once, even if the screen is recreated.
+        intent.setAction(null);
+        if (look == null) {
+            Toast.makeText(this, "That link isn't a Resona look, or it got cut off.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        mainHandler.post(() -> LookShare.offer(this, look, () -> looksUi.refresh()));
     }
 
     /** Once the tour is over, ask for audio access if it's still needed. */
