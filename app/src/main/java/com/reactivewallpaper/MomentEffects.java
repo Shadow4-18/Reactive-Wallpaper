@@ -30,6 +30,9 @@ final class MomentEffects {
     private int intro = WallpaperSettings.INTRO_OFF;
     private float introAge = -1f;
     private float chargeAge = -1f;
+    private float pulseAge = -1f;
+    private int pulseColor;
+    static final float PULSE_SECONDS = 1.8f;
     private int chargePercent = -1;
 
     MomentEffects(float density) {
@@ -52,8 +55,14 @@ final class MomentEffects {
         chargePercent = percent;
     }
 
+    /** A glow around the screen's edges that breathes twice, in {@code color}. */
+    void startPulse(int color) {
+        pulseAge = 0f;
+        pulseColor = color;
+    }
+
     boolean isActive() {
-        return introAge >= 0f || chargeAge >= 0f;
+        return introAge >= 0f || chargeAge >= 0f || pulseAge >= 0f;
     }
 
     void advance(float dt) {
@@ -69,6 +78,22 @@ final class MomentEffects {
                 chargeAge = -1f;
             }
         }
+        if (pulseAge >= 0f) {
+            pulseAge += dt;
+            if (pulseAge > PULSE_SECONDS) {
+                pulseAge = -1f;
+            }
+        }
+    }
+
+    /** 0..1: two soft breaths over the pulse's length. */
+    private float pulseLevel() {
+        if (pulseAge < 0f) {
+            return 0f;
+        }
+        float t = pulseAge / PULSE_SECONDS;
+        float breath = (float) Math.sin(Math.PI * Math.min(1f, (t * 2f) % 1f));
+        return breath * (t < 0.5f ? 1f : 0.65f);
     }
 
     private float introT() {
@@ -100,6 +125,7 @@ final class MomentEffects {
             float t = chargeAge / CHARGE_SECONDS;
             boost += 1.5f * (float) Math.sin(Math.PI * t);
         }
+        boost += 0.8f * pulseLevel();
         return boost;
     }
 
@@ -153,6 +179,33 @@ final class MomentEffects {
         if (chargeAge >= 0f) {
             drawCharge(canvas, w, h, color, accent);
         }
+        if (pulseAge >= 0f) {
+            drawPulse(canvas, w, h, pulseColor != 0 ? (pulseColor | 0xFF000000) : accent);
+        }
+    }
+
+    /** Light seeping in from all four edges, like the screen glowing from behind. */
+    private void drawPulse(Canvas canvas, int w, int h, int color) {
+        float level = pulseLevel();
+        if (level <= 0.01f) {
+            return;
+        }
+        float depth = Math.min(w, h) * 0.16f;
+        int edge = (color & 0x00FFFFFF) | ((int) (200 * level) << 24);
+        int clear = color & 0x00FFFFFF;
+        paint.setStyle(Paint.Style.FILL);
+        paint.setXfermode(ADD);
+        paint.setAlpha(255);
+        paint.setShader(new LinearGradient(0, 0, 0, depth, edge, clear, Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, w, depth, paint);
+        paint.setShader(new LinearGradient(0, h, 0, h - depth, edge, clear, Shader.TileMode.CLAMP));
+        canvas.drawRect(0, h - depth, w, h, paint);
+        paint.setShader(new LinearGradient(0, 0, depth, 0, edge, clear, Shader.TileMode.CLAMP));
+        canvas.drawRect(0, 0, depth, h, paint);
+        paint.setShader(new LinearGradient(w, 0, w - depth, 0, edge, clear, Shader.TileMode.CLAMP));
+        canvas.drawRect(w - depth, 0, w, h, paint);
+        paint.setShader(null);
+        paint.setXfermode(null);
     }
 
     /** A band of light rises from the bottom edge, shedding sparks, with the battery level. */

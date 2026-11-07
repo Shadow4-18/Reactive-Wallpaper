@@ -52,6 +52,7 @@ final class LooksUi {
     private LinearLayout looksRow;
     private Button lockLookButton;
     private Button rotationButton;
+    private Button timeOfDayButton;
     /** Looks waiting for the user to pick where to save the export. */
     private java.util.List<PresetStore.Preset> pendingExport;
 
@@ -85,6 +86,10 @@ final class LooksUi {
         rotationButton = new Button(activity);
         rotationButton.setOnClickListener(v -> rotationDialog());
         looks.addView(rotationButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        timeOfDayButton = new Button(activity);
+        timeOfDayButton.setOnClickListener(v -> timeOfDayDialog());
+        looks.addView(timeOfDayButton, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout shareRow = new LinearLayout(activity);
         Button importLooks = new Button(activity);
@@ -140,6 +145,79 @@ final class LooksUi {
         PresetStore.Preset lock = PresetStore.find(activity, WallpaperSettings.lockLookId(activity));
         lockLookButton.setText("Lock screen: " + (lock == null ? "same as home" : lock.name));
         rotationButton.setText("Rotate looks: " + rotationSummary());
+        int set = 0;
+        for (String id : WallpaperSettings.timeOfDayIds(activity)) {
+            if (!id.isEmpty() && PresetStore.find(activity, id) != null) {
+                set++;
+            }
+        }
+        timeOfDayButton.setText("Time of day: " + (set == 0 ? "off" : set + (set == 1 ? " look" : " looks")));
+    }
+
+    /**
+     * Picks a saved look for each part of the day. Parts left empty keep the
+     * look of the part before them; with none set, the editor's look shows.
+     */
+    private void timeOfDayDialog() {
+        java.util.List<PresetStore.Preset> all = PresetStore.all(activity);
+        if (all.isEmpty()) {
+            Toast.makeText(activity, "Save a look first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] ids = WallpaperSettings.timeOfDayIds(activity);
+        String[] names = new String[all.size() + 1];
+        names[0] = "Keep the earlier one";
+        for (int i = 0; i < all.size(); i++) {
+            names[i + 1] = all.get(i).name;
+        }
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        ui.hint(box, "The home screen switches looks through the day. Look rotation, when on, takes "
+                + "priority.");
+        for (int part = 0; part < 4; part++) {
+            int index = part;
+            ui.label(box, TimeOfDay.NAMES[part]);
+            Button pick = new Button(activity);
+            Runnable label = () -> {
+                PresetStore.Preset p = PresetStore.find(activity, ids[index]);
+                pick.setText(p == null ? names[0] : p.name);
+            };
+            label.run();
+            pick.setOnClickListener(v -> {
+                int checked = 0;
+                for (int i = 0; i < all.size(); i++) {
+                    if (all.get(i).id.equals(ids[index])) {
+                        checked = i + 1;
+                    }
+                }
+                new AlertDialog.Builder(activity)
+                        .setTitle(TimeOfDay.NAMES[index])
+                        .setSingleChoiceItems(names, checked, (d, which) -> {
+                            ids[index] = which == 0 ? "" : all.get(which - 1).id;
+                            label.run();
+                            d.dismiss();
+                        })
+                        .show();
+            });
+            box.addView(pick, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        android.widget.ScrollView scroll = new android.widget.ScrollView(activity);
+        scroll.addView(box);
+        new AlertDialog.Builder(activity)
+                .setTitle("Looks by time of day")
+                .setView(scroll)
+                .setPositiveButton("Save", (d, which) -> {
+                    WallpaperSettings.setTimeOfDay(activity, ids);
+                    refresh();
+                })
+                .setNeutralButton("Turn off", (d, which) -> {
+                    WallpaperSettings.setTimeOfDay(activity, new String[] {"", "", "", ""});
+                    refresh();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private String rotationSummary() {

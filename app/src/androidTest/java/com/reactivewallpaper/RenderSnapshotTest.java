@@ -292,6 +292,7 @@ public class RenderSnapshotTest {
             });
         }
         snapMoment("73_charging", image, 25, r -> r.playCharge(57));
+        snapMoment("74_notification_glow", image, 13, r -> r.playPulse(0xFF25D366));
     }
 
     /** Plays a moment over a picture with music and catches it {@code framesIn} frames later. */

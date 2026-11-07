@@ -65,6 +65,8 @@ public class ReactiveWallpaperService extends WallpaperService {
         private KeyguardManager keyguard;
         private boolean locked;
         private long lastLockCheck;
+        private String[] timeOfDayIds = {"", "", "", ""};
+        private int timeOfDayPart;
 
         // Look rotation.
         private List<String> rotationIds;
@@ -84,6 +86,12 @@ public class ReactiveWallpaperService extends WallpaperService {
 
         private boolean receiverRegistered;
         private long lastIntro = -10_000;
+        private final java.util.function.IntConsumer pulseListener = color -> {
+            if (isVisible()) {
+                currentSlot().playPulse(color);
+                wake();
+            }
+        };
 
         private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
             @Override
@@ -145,6 +153,7 @@ public class ReactiveWallpaperService extends WallpaperService {
                 registerReceiver(screenReceiver, filter);
             }
             receiverRegistered = true;
+            NotificationPulse.add(pulseListener);
             loadRotation();
             lastRotation = SystemClock.uptimeMillis();
             locked = isLockedNow();
@@ -155,6 +164,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             super.onDestroy();
             WallpaperSettings.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
             PresetStore.unregisterListener(context, presetsListener);
+            NotificationPulse.remove(pulseListener);
             if (receiverRegistered) {
                 receiverRegistered = false;
                 try {
@@ -339,6 +349,14 @@ public class ReactiveWallpaperService extends WallpaperService {
                     }
                 }
             }
+            // Time-of-day looks, when rotation isn't on.
+            String id = TimeOfDay.lookFor(timeOfDayIds, timeOfDayPart);
+            if (!id.isEmpty()) {
+                PresetStore.Preset preset = PresetStore.find(context, id);
+                if (preset != null) {
+                    return lookFor(preset);
+                }
+            }
             return new Look(live, ImageStore.live(context));
         }
 
@@ -411,7 +429,13 @@ public class ReactiveWallpaperService extends WallpaperService {
             }
         }
 
+        private int currentPart() {
+            return TimeOfDay.part(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY));
+        }
+
         private void loadRotation() {
+            timeOfDayIds = WallpaperSettings.timeOfDayIds(context);
+            timeOfDayPart = currentPart();
             rotationIds = WallpaperSettings.rotationIds(context);
             rotationMode = WallpaperSettings.rotationMode(context);
             rotationMinutes = Math.max(1, WallpaperSettings.rotationMinutes(context));
@@ -517,6 +541,12 @@ public class ReactiveWallpaperService extends WallpaperService {
             long now = SystemClock.uptimeMillis();
             if (now - lastLockCheck > LOCK_POLL_MS) {
                 lastLockCheck = now;
+                int part = currentPart();
+                if (part != timeOfDayPart) {
+                    // A new part of the day: its look fades in.
+                    timeOfDayPart = part;
+                    refresh(true);
+                }
                 updateLocked();
             }
             if (rotationMode == WallpaperSettings.ROTATE_MINUTES
@@ -550,6 +580,12 @@ public class ReactiveWallpaperService extends WallpaperService {
             }
 
             long delay = saving ? SAVER_FRAME_MS : 0;
+            if (s.maxFps > 0) {
+                // Wait long enough that the next frame lands no sooner than the cap allows;
+                // the frame callback then waits for the screen's next refresh.
+                long spent = SystemClock.uptimeMillis() - now;
+                delay = Math.max(delay, 1000L / s.maxFps - spent - 4);
+            }
             if (idle && !slot.isFading() && !slot.isBusy()) {
                 boolean moving = s.mediaType != WallpaperSettings.MEDIA_IMAGE && !(s.albumArt && art != null);
                 boolean animated = moving || s.breathe > 0f || s.sparkleAmount > 0f || s.sway > 0f

@@ -154,10 +154,11 @@ final class AlbumArtSource {
     /** Explains why notification access is needed and offers to open the settings screen. */
     static void askForAccess(Activity activity) {
         new AlertDialog.Builder(activity)
-                .setTitle("Allow access to what's playing")
-                .setMessage("To see the current song, Android needs Resona to have notification access. "
-                        + "On the next screen, turn on Resona. Resona only looks at what's playing and "
-                        + "never reads your notifications.")
+                .setTitle("Allow notification access")
+                .setMessage("Android needs Resona to have notification access to see the current song "
+                        + "(for album art and per-song looks) and to notice new notifications (for the "
+                        + "notification glow). On the next screen, turn on Resona. Resona never reads "
+                        + "what your notifications say.")
                 .setPositiveButton("Open settings", (d, w) -> {
                     try {
                         activity.startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));

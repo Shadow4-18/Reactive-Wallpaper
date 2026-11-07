@@ -62,6 +62,14 @@ public class MainActivity extends Activity {
     private FrameLayout previewFrame;
     private PreviewView.FramingListener framing;
     private android.app.Dialog fullScreen;
+
+    // Undo history of the editor's settings (as saved JSON), newest last.
+    private static final int MAX_HISTORY = 40;
+    private final java.util.ArrayDeque<String> undoStack = new java.util.ArrayDeque<>();
+    private final java.util.ArrayDeque<String> redoStack = new java.util.ArrayDeque<>();
+    private String lastSnapshot;
+    private TextView undoButton;
+    private TextView redoButton;
     private TextView permissionNote;
     private Button setWallpaper;
     private View applyStatus;
@@ -131,6 +139,8 @@ public class MainActivity extends Activity {
         };
         preview.setFramingListener(framing);
         addFullScreenButton();
+        addHistoryRow();
+        lastSnapshot = snapshot(settings);
         artSource = new AlbumArtSource(this, (key, cover) -> {
             if (art != null) {
                 art.recycle();
@@ -173,9 +183,24 @@ public class MainActivity extends Activity {
         });
         buildControls();
 
-        if (!AudioController.hasPermission(this)) {
+        if (!editorPrefs().getBoolean(KEY_TOUR, false)) {
+            editorPrefs().edit().putBoolean(KEY_TOUR, true).apply();
+            mainHandler.postDelayed(() -> showTour(0), 600);
+        } else if (!AudioController.hasPermission(this)) {
             requestAudioPermission();
         }
+    }
+
+    private static final String KEY_SIMPLE = "simpleEditor";
+    private static final String KEY_TOUR = "tourShown";
+
+    /** The editor's own preferences (kept apart from the wallpaper's, which it watches). */
+    private android.content.SharedPreferences editorPrefs() {
+        return getSharedPreferences("editor_ui", MODE_PRIVATE);
+    }
+
+    private boolean isSimpleMode() {
+        return editorPrefs().getBoolean(KEY_SIMPLE, false);
     }
 
     private void buildControls() {
@@ -193,6 +218,15 @@ public class MainActivity extends Activity {
         });
         WallpaperSettings s = settings;
         updates.addBanner(controls);
+        ui.simple = isSimpleMode();
+        ui.choice(controls, new String[] {"Simple", "Everything"}, new int[] {1, 0}, ui.simple ? 1 : 0, v -> {
+            editorPrefs().edit().putBoolean(KEY_SIMPLE, v == 1).apply();
+            mainHandler.post(this::buildControls);
+        });
+        if (ui.simple) {
+            ui.hint(controls, "Showing the main settings. Choose Everything for camera moves, shader effects, "
+                    + "touch, unlock and more.");
+        }
 
         LinearLayout looks = ui.section("Looks");
         looksUi.build(ui, looks);
@@ -288,7 +322,7 @@ public class MainActivity extends Activity {
         ui.hint(albumArt, "Uses your image whenever nothing is playing. Needs notification access, which "
                 + "Android requires to see what's playing; Resona never reads your notifications.");
 
-        LinearLayout recolor = ui.section("Recolor");
+        LinearLayout recolor = ui.section("Recolor", true);
         ui.slider(recolor, "Hue shift", 0f, 360f, () -> s.hueShift, v -> s.hueShift = v,
                 v -> Math.round(v) == 0 || Math.round(v) == 360 ? "Off" : "+" + Math.round(v) + "°");
         ui.slider(recolor, "Color cycle (keeps shifting)", 0f, 1f, () -> s.colorCycle, v -> s.colorCycle = v,
@@ -296,7 +330,7 @@ public class MainActivity extends Activity {
         ui.toggle(recolor, "Recolor the whole image, not just the glow",
                 () -> s.recolorImage, v -> s.recolorImage = v);
 
-        LinearLayout idle = ui.section("Idle animation (moves without sound)");
+        LinearLayout idle = ui.section("Idle animation (moves without sound)", true);
         ui.slider(idle, "Breathing glow", 0f, 2f, () -> s.breathe, v -> s.breathe = v, Controls::percent);
         ui.slider(idle, "Breathing speed", 0.25f, 3f, () -> s.breatheSpeed, v -> s.breatheSpeed = v, Controls::speed);
         ui.slider(idle, "Sway", 0f, 2f, () -> s.sway, v -> s.sway = v, Controls::percent);
@@ -319,7 +353,7 @@ public class MainActivity extends Activity {
         ui.slider(sparkles, "Music reaction", 0f, 2f, () -> s.sparkleReact, v -> s.sparkleReact = v,
                 Controls::percent);
 
-        LinearLayout depth = ui.section("Parallax (3D depth)");
+        LinearLayout depth = ui.section("Parallax (3D depth)", true);
         ui.slider(depth, "Tilt the phone", 0f, 2f, () -> s.tiltParallax, v -> {
             s.tiltParallax = v;
             if (v > 0f && resumed) {
@@ -329,14 +363,14 @@ public class MainActivity extends Activity {
         ui.slider(depth, "Home-screen swipe", 0f, 2f, () -> s.swipeParallax, v -> s.swipeParallax = v,
                 Controls::percent);
 
-        LinearLayout beat = ui.section("Beat effects");
+        LinearLayout beat = ui.section("Beat effects", true);
         ui.slider(beat, "Pulse (zoom with the bass)", 0f, 2f, () -> s.pulse, v -> s.pulse = v, Controls::percent);
         ui.slider(beat, "Flash", 0f, 2f, () -> s.flash, v -> s.flash = v, Controls::percent);
         ui.slider(beat, "Shake", 0f, 2f, () -> s.shake, v -> s.shake = v, Controls::percent);
         ui.slider(beat, "Camera punch (zoom kick)", 0f, 2f, () -> s.camPunch, v -> s.camPunch = v, Controls::percent);
         ui.slider(beat, "Camera tilt (alternating)", 0f, 2f, () -> s.camTilt, v -> s.camTilt = v, Controls::percent);
 
-        LinearLayout effects = ui.section("Shader effects");
+        LinearLayout effects = ui.section("Shader effects", true);
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             ui.slider(effects, "Bass ripples", 0f, 2f, () -> s.fxRipple, v -> s.fxRipple = v, Controls::percent);
             ui.slider(effects, "Color split on beats", 0f, 2f, () -> s.fxSplit, v -> s.fxSplit = v, Controls::percent);
@@ -350,7 +384,7 @@ public class MainActivity extends Activity {
             ui.hint(effects, "Shader effects need Android 13 or newer.");
         }
 
-        LinearLayout touch = ui.section("Touch");
+        LinearLayout touch = ui.section("Touch", true);
         ui.choiceColumn(touch, new String[] {"Off", "Ripple of light", "Burst of sparks (drag for a trail)",
                         "Glow flare"},
                 new int[] {WallpaperSettings.TAP_OFF, WallpaperSettings.TAP_RIPPLE, WallpaperSettings.TAP_BURST,
@@ -358,7 +392,7 @@ public class MainActivity extends Activity {
                 s.tapEffect, v -> s.tapEffect = v);
         ui.hint(touch, "Touch empty space on your home screen. Tap the preview here to try it.");
 
-        LinearLayout moments = ui.section("Unlock & charging");
+        LinearLayout moments = ui.section("Unlock, charging & notifications", true);
         ui.label(moments, "When you unlock the phone");
         ui.choiceColumn(moments, new String[] {"Nothing", "Fade up from dark", "Zoom in and bloom", "Wave of light"},
                 new int[] {WallpaperSettings.INTRO_OFF, WallpaperSettings.INTRO_FADE,
@@ -383,6 +417,20 @@ public class MainActivity extends Activity {
             renderer.playCharge(percent >= 0 && percent <= 100 ? percent : -1);
         });
         moments.addView(previewCharge, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ui.toggle(moments, "Glow around the edges when a notification arrives", () -> s.notifyPulse, v -> {
+            s.notifyPulse = v;
+            if (v && !AlbumArtSource.hasAccess(this)) {
+                AlbumArtSource.askForAccess(this);
+            }
+        });
+        ui.toggle(moments, "In the app's own color", () -> s.notifyUseAppColor, v -> s.notifyUseAppColor = v);
+        ui.hint(moments, "Uses notification access. Resona only notices that something arrived and its "
+                + "app's color; it never reads what notifications say.");
+        Button previewPulse = new Button(this);
+        previewPulse.setText("Preview notification glow");
+        previewPulse.setOnClickListener(v -> renderer.playPulse(0));
+        moments.addView(previewPulse, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout viz = ui.section("Visualizer overlay");
@@ -488,7 +536,7 @@ public class MainActivity extends Activity {
             restartAudio();
         });
 
-        LinearLayout widget = ui.section("Home screen media buttons");
+        LinearLayout widget = ui.section("Home screen media buttons", true);
         ui.label(widget, "A widget with previous, play/pause and next that can be faint or completely "
                 + "invisible, so your screen shows only the wallpaper.");
         Button addWidget = new Button(this);
@@ -501,17 +549,26 @@ public class MainActivity extends Activity {
         ui.hint(widget, "Outlines the buttons on every Resona widget until you turn this off. "
                 + "Long-press a widget (Android 12+) to change how visible it is.");
 
-        LinearLayout battery = ui.section("Battery");
+        LinearLayout battery = ui.section("Battery", true);
         ui.label(battery, "Battery saver: lower frame rate and half the particles");
         ui.choice(battery, new String[] {"Off", "Auto", "Always"},
                 new int[] {WallpaperSettings.SAVER_OFF, WallpaperSettings.SAVER_AUTO, WallpaperSettings.SAVER_ALWAYS},
                 s.batterySaver, v -> s.batterySaver = v);
         ui.hint(battery, "Auto: when the phone is in battery saver or below 20% and not charging.");
+        ui.label(battery, "Frame rate");
+        ui.choice(battery, new String[] {"30", "60", "Screen's max"}, new int[] {30, 60, 0}, s.maxFps,
+                v -> s.maxFps = v);
+        ui.hint(battery, "Lower frame rates save battery; the screen's max is smoothest on 90 and 120 Hz phones.");
         ui.slider(battery, "Sleep after silence", 0f, 30f, () -> s.sleepMinutes, v -> s.sleepMinutes = Math.round(v),
                 v -> Math.round(v) == 0 ? "Never" : Math.round(v) + " min");
 
         LinearLayout about = ui.section("About & updates");
         ui.label(about, "Resona " + Updater.installedVersion(this));
+        Button tour = new Button(this);
+        tour.setText("Show the quick tour");
+        tour.setOnClickListener(v -> showTour(0));
+        about.addView(tour, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         Button check = new Button(this);
         check.setText("Check for updates");
         check.setOnClickListener(v -> updates.check(true));
@@ -1137,7 +1194,157 @@ public class MainActivity extends Activity {
         updateApplyState();
     }
 
+    private static String snapshot(WallpaperSettings s) {
+        return PresetStore.toJson(s).toString();
+    }
+
+    /** Remembers the settings as they were before this change, for undo. */
+    private void noteHistory() {
+        if (lastSnapshot == null) {
+            return;
+        }
+        String now = snapshot(settings);
+        if (now.equals(lastSnapshot)) {
+            return;
+        }
+        undoStack.addLast(lastSnapshot);
+        while (undoStack.size() > MAX_HISTORY) {
+            undoStack.removeFirst();
+        }
+        redoStack.clear();
+        lastSnapshot = now;
+        updateHistoryButtons();
+    }
+
+    /** Steps back (or forward) through the history; the picture itself stays. */
+    private void stepHistory(boolean undo) {
+        java.util.ArrayDeque<String> from = undo ? undoStack : redoStack;
+        java.util.ArrayDeque<String> to = undo ? redoStack : undoStack;
+        if (from.isEmpty()) {
+            return;
+        }
+        to.addLast(lastSnapshot);
+        String json = from.removeLast();
+        try {
+            WallpaperSettings next = PresetStore.fromJson(new org.json.JSONObject(json));
+            // The picture and its type stay as they are now; only the settings step.
+            next.imageVersion = settings.imageVersion;
+            next.mediaType = settings.mediaType;
+            settings = next;
+        } catch (org.json.JSONException e) {
+            return;
+        }
+        lastSnapshot = snapshot(settings);
+        settings.saveDraft(this);
+        applyAudioSettings();
+        preview.setSettings(settings);
+        buildControls();
+        updateArtSource();
+        loadPreviewImage();
+        updateApplyState();
+        updateHistoryButtons();
+    }
+
+    private void updateHistoryButtons() {
+        if (undoButton != null) {
+            undoButton.setEnabled(!undoStack.isEmpty());
+            undoButton.setAlpha(undoStack.isEmpty() ? 0.35f : 1f);
+            redoButton.setEnabled(!redoStack.isEmpty());
+            redoButton.setAlpha(redoStack.isEmpty() ? 0.35f : 1f);
+        }
+    }
+
+    /** Undo, redo and hold-to-compare, in a slim row under the preview. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private void addHistoryRow() {
+        ViewGroup parent = (ViewGroup) previewFrame.getParent();
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER);
+        undoButton = rowButton("\u21B6 Undo");
+        undoButton.setOnClickListener(v -> stepHistory(true));
+        redoButton = rowButton("Redo \u21B7");
+        redoButton.setOnClickListener(v -> stepHistory(false));
+        TextView compare = rowButton("Hold to compare");
+        compare.setOnTouchListener((v, e) -> {
+            int action = e.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN) {
+                // What's on the wallpaper now, drawn over the editor's picture.
+                preview.setSettings(WallpaperSettings.load(this));
+                compare.setText("Showing applied");
+                v.setPressed(true);
+            } else if (action == android.view.MotionEvent.ACTION_UP
+                    || action == android.view.MotionEvent.ACTION_CANCEL) {
+                preview.setSettings(settings);
+                compare.setText("Hold to compare");
+                v.setPressed(false);
+            }
+            return true;
+        });
+        row.addView(undoButton);
+        row.addView(compare);
+        row.addView(redoButton);
+        parent.addView(row, parent.indexOfChild(previewFrame) + 1, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        updateHistoryButtons();
+    }
+
+    private TextView rowButton(String text) {
+        TextView b = new TextView(this);
+        b.setText(text);
+        b.setTextColor(getColor(R.color.accent));
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        b.setGravity(Gravity.CENTER);
+        b.setMinHeight(dp(40));
+        b.setPadding(dp(14), 0, dp(14), 0);
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        b.setBackgroundResource(ripple.resourceId);
+        b.setClickable(true);
+        b.setFocusable(true);
+        return b;
+    }
+
+    /**
+     * A short first-run tour, a few cards long; also from About. Skipping
+     * anywhere ends it.
+     */
+    private void showTour(int step) {
+        String[][] cards = {
+                {"Welcome to Resona", "Resona turns your picture into a wallpaper that moves with your music. "
+                        + "Here's the quick tour."},
+                {"1. Pick a picture", "Tap Choose image. Photos, art, GIFs and videos all work."},
+                {"2. Make it yours", "Open the sections below the preview. Simple shows the main settings; "
+                        + "Everything shows all of them. Undo, redo and hold-to-compare sit under the preview."},
+                {"3. See it big", "Tap the corner button on the preview to see it full screen, and tap the "
+                        + "preview to try touch effects."},
+                {"4. Set it", "Tap Set wallpaper, then choose the home screen, lock screen or both. Save "
+                        + "looks you like under Looks to switch back any time."},
+        };
+        if (isDestroyed()) {
+            return;
+        }
+        if (step >= cards.length) {
+            afterTour();
+            return;
+        }
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(cards[step][0])
+                .setMessage(cards[step][1])
+                .setPositiveButton(step == cards.length - 1 ? "Done" : "Next", (d, w) -> showTour(step + 1))
+                .setNegativeButton(step == 0 ? "Skip" : null, (d, w) -> afterTour())
+                .setOnCancelListener(d -> afterTour())
+                .show();
+    }
+
+    /** Once the tour is over, ask for audio access if it's still needed. */
+    private void afterTour() {
+        if (!isDestroyed() && !AudioController.hasPermission(this)) {
+            requestAudioPermission();
+        }
+    }
+
     private void updateApplyState() {
+        noteHistory();
         boolean active = isOurWallpaperActive();
         boolean pending = !settings.sameAs(WallpaperSettings.load(this));
         if (active && pending) {

@@ -124,6 +124,12 @@ final class LookSlot {
         }
     }
 
+    void playPulse(int color) {
+        if (renderer != null && settings.notifyPulse) {
+            renderer.playPulse(settings.notifyUseAppColor ? color : 0);
+        }
+    }
+
     void playCharge(int percent) {
         if (renderer != null && settings.chargeEffect) {
             renderer.playCharge(percent);

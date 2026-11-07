@@ -106,6 +106,14 @@ final class Controls {
      * section starts collapsed, so the editor opens as a tidy list.
      */
     LinearLayout section(String title) {
+        return section(title, false);
+    }
+
+    /** True to hide the sections marked advanced (the editor's Simple mode). */
+    boolean simple;
+
+    /** A section shown only in Everything mode when {@code advanced}. */
+    LinearLayout section(String title, boolean advanced) {
         TextView header = new TextView(context);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         header.setTypeface(Typeface.DEFAULT_BOLD);
@@ -130,6 +138,11 @@ final class Controls {
         boolean open = expandedSections.getOrDefault(title, false);
         body.setVisibility(open ? View.VISIBLE : View.GONE);
         refresh.run();
+        if (advanced && simple) {
+            // Built as usual (so its controls exist), just not shown.
+            header.setVisibility(View.GONE);
+            body.setVisibility(View.GONE);
+        }
         header.setOnClickListener(v -> {
             boolean nowOpen = body.getVisibility() != View.VISIBLE;
             body.setVisibility(nowOpen ? View.VISIBLE : View.GONE);

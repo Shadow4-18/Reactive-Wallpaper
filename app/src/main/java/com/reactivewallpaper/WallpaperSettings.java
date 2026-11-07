@@ -135,6 +135,12 @@ final class WallpaperSettings {
     int unlockIntro = INTRO_ZOOM;
     /** A wave of light and the battery level when a charger is plugged in. */
     boolean chargeEffect = true;
+    /** A glow around the screen edges when a notification arrives (needs notification access). */
+    boolean notifyPulse = false;
+    /** Glow in the notifying app's color rather than the look's. */
+    boolean notifyUseAppColor = true;
+    /** Frame rate cap: 0 = the screen's own, else 30 or 60. */
+    int maxFps = 0;
     /** What touching the home screen does. */
     int tapEffect = TAP_OFF;
 
@@ -273,6 +279,22 @@ final class WallpaperSettings {
                 .apply();
     }
 
+    private static final String KEY_TIME_OF_DAY = "timeOfDayIds";
+
+    /** A saved look's id for each part of the day ("" = none), see {@link TimeOfDay}. */
+    static String[] timeOfDayIds(Context context) {
+        String[] ids = {"", "", "", ""};
+        String[] stored = prefs(context).getString(KEY_TIME_OF_DAY, "").split("\n", -1);
+        for (int i = 0; i < 4 && i < stored.length; i++) {
+            ids[i] = stored[i];
+        }
+        return ids;
+    }
+
+    static void setTimeOfDay(Context context, String[] ids) {
+        prefs(context).edit().putString(KEY_TIME_OF_DAY, String.join("\n", ids)).apply();
+    }
+
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
@@ -361,6 +383,9 @@ final class WallpaperSettings {
         s.tapEffect = p.getInt("tapEffect", s.tapEffect);
         s.unlockIntro = p.getInt("unlockIntro", s.unlockIntro);
         s.chargeEffect = p.getBoolean("chargeEffect", s.chargeEffect);
+        s.notifyPulse = p.getBoolean("notifyPulse", s.notifyPulse);
+        s.notifyUseAppColor = p.getBoolean("notifyUseAppColor", s.notifyUseAppColor);
+        s.maxFps = p.getInt("maxFps", s.maxFps);
         s.fxRipple = p.getFloat("fxRipple", s.fxRipple);
         s.fxSplit = p.getFloat("fxSplit", s.fxSplit);
         s.fxGlitch = p.getFloat("fxGlitch", s.fxGlitch);
@@ -469,6 +494,9 @@ final class WallpaperSettings {
         w.putInt("tapEffect", tapEffect);
         w.putInt("unlockIntro", unlockIntro);
         w.putBoolean("chargeEffect", chargeEffect);
+        w.putBoolean("notifyPulse", notifyPulse);
+        w.putBoolean("notifyUseAppColor", notifyUseAppColor);
+        w.putInt("maxFps", maxFps);
         w.putFloat("fxRipple", fxRipple);
         w.putFloat("fxSplit", fxSplit);
         w.putFloat("fxGlitch", fxGlitch);
@@ -548,8 +576,12 @@ final class WallpaperSettings {
     boolean copyDeviceSettingsFrom(WallpaperSettings other) {
         boolean changed = source != other.source || syncSpeakerMs != other.syncSpeakerMs
                 || syncBluetoothMs != other.syncBluetoothMs || batterySaver != other.batterySaver
-                || sleepMinutes != other.sleepMinutes;
+                || sleepMinutes != other.sleepMinutes || maxFps != other.maxFps
+                || notifyPulse != other.notifyPulse || notifyUseAppColor != other.notifyUseAppColor;
         source = other.source;
+        maxFps = other.maxFps;
+        notifyPulse = other.notifyPulse;
+        notifyUseAppColor = other.notifyUseAppColor;
         syncSpeakerMs = other.syncSpeakerMs;
         syncBluetoothMs = other.syncBluetoothMs;
         batterySaver = other.batterySaver;

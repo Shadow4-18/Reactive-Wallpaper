@@ -51,6 +51,27 @@ public class AppSmokeTest {
         settings.circleSize = 0.36f;
         settings.save(context);
         settings.saveDraft(context);
+        // The first-run tour has its own test; elsewhere it would cover the screenshots.
+        editorPrefs().edit().putBoolean("tourShown", true).putBoolean("simpleEditor", false).commit();
+    }
+
+    private android.content.SharedPreferences editorPrefs() {
+        return context.getSharedPreferences("editor_ui", android.content.Context.MODE_PRIVATE);
+    }
+
+    @Test
+    public void firstRunTourAndSimpleMode() throws Exception {
+        editorPrefs().edit().putBoolean("tourShown", false).commit();
+        Activity activity = start(MainActivity.class, null);
+        shot("08_first_run_tour", 2500);
+        instrumentation.getUiAutomation().performGlobalAction(
+                android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);
+        activity.finish();
+        SystemClock.sleep(1000);
+        editorPrefs().edit().putBoolean("simpleEditor", true).commit();
+        activity = start(MainActivity.class, null);
+        shot("09_simple_mode", 3000);
+        activity.finish();
     }
 
     private void shot(String name, long waitMs) throws Exception {

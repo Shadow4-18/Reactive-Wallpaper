@@ -167,6 +167,11 @@ final class WallpaperRenderer {
         }
     }
 
+    /** A glow around the edges for an arriving notification; {@code color} 0 uses the look's. */
+    void playPulse(int color) {
+        moments().startPulse(color);
+    }
+
     /** Plays the charger-connected wave, showing {@code percent} (or -1 for none). */
     void playCharge(int percent) {
         moments().startCharge(percent);
