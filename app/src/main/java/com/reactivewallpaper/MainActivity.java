@@ -797,7 +797,7 @@ public class MainActivity extends Activity {
         previewFrame.setClipToPadding(false);
         previewFrame.addView(preview, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        TextView expand = roundButton("⤢", "Full screen preview");
+        View expand = roundButton(IconDrawable.FULL_SCREEN, "Full screen preview");
         expand.setOnClickListener(v -> openFullScreenPreview());
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.TOP | Gravity.END);
         blp.setMargins(0, dp(6), dp(6), 0);
@@ -807,13 +807,12 @@ public class MainActivity extends Activity {
         parent.addView(previewFrame, index, lp);
     }
 
-    private TextView roundButton(String symbol, String description) {
-        TextView b = new TextView(this);
-        b.setText(symbol);
+    /** A dark round button with a drawn icon (not a font symbol, which varies by phone). */
+    private View roundButton(int icon, String description) {
+        android.widget.ImageView b = new android.widget.ImageView(this);
+        b.setImageDrawable(new IconDrawable(icon, 0xFFFFFFFF, dp(2)));
+        b.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
         b.setContentDescription(description);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-        b.setTextColor(0xFFFFFFFF);
-        b.setGravity(Gravity.CENTER);
         android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
         bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
         bg.setColor(0x99000000);
@@ -842,7 +841,7 @@ public class MainActivity extends Activity {
         full.setFramingListener(framing);
         box.addView(full, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        TextView close = roundButton("✕", "Close full screen preview");
+        View close = roundButton(IconDrawable.CLOSE, "Close full screen preview");
         close.setOnClickListener(v -> dialog.dismiss());
         FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP | Gravity.END);
         clp.setMargins(0, dp(28), dp(16), 0);
