@@ -47,6 +47,7 @@ final class TapEffects {
     private final Paint sprite = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Matrix spriteMatrix = new Matrix();
     private final Bitmap glow = Sprites.tint(Sprites.glow(64), 64, 64, Color.WHITE);
+    private final Bitmap core = Sprites.tint(Sprites.core(64), 64, 64, Color.WHITE);
     private float flare;
     private float lastTrailX = Float.NaN;
     private float lastTrailY = Float.NaN;
@@ -147,16 +148,24 @@ final class TapEffects {
             s.x += s.vx * dt;
             s.y += s.vy * dt;
             float fade = 1f - s.age / s.life;
-            float size = s.size * (0.6f + 0.4f * fade) * 6f;
+            // A colored halo with a white-hot center, so each spark reads at a glance.
+            float size = s.size * (0.6f + 0.4f * fade) * 10f;
             spriteMatrix.setScale(size / glow.getWidth(), size / glow.getHeight());
             spriteMatrix.postTranslate(s.x - size / 2f, s.y - size / 2f);
             sprite.setColorFilter(s.tint);
             sprite.setAlpha((int) (fade * 255));
             canvas.drawBitmap(glow, spriteMatrix, sprite);
+            float coreSize = size * 0.45f;
+            spriteMatrix.setScale(coreSize / core.getWidth(), coreSize / core.getHeight());
+            spriteMatrix.postTranslate(s.x - coreSize / 2f, s.y - coreSize / 2f);
+            sprite.setColorFilter(null);
+            sprite.setAlpha((int) (fade * 230));
+            canvas.drawBitmap(core, spriteMatrix, sprite);
         }
     }
 
     void release() {
         glow.recycle();
+        core.recycle();
     }
 }

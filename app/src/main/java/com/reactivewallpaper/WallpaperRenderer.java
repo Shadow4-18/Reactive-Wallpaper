@@ -234,7 +234,7 @@ final class WallpaperRenderer {
                 living = new LivingImage(image, mask, accentHues, s.glowCoverage);
             }
             float flare = taps != null ? taps.flare() : 0f;
-            living.setExtraScale((framed ? 1f : ALBUM_ART_GLOW) * (1f + 2.5f * flare));
+            living.setExtraScale((framed ? 1f : ALBUM_ART_GLOW) * (1f + 6f * flare));
             // Particles sit "in front" of the picture, so they move further with parallax.
             living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,
                     filter, saving ? 0.5f : 1f, mediaFrame == null);
