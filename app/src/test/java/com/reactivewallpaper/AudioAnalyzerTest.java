@@ -21,9 +21,18 @@ public class AudioAnalyzerTest {
 
     /** Runs 8 s of a kick every 500 ms over sustained bass; returns when beats fired. */
     private List<Long> beatTimes(long delayMs) {
+        return beatTimes(delayMs, true, false);
+    }
+
+    /**
+     * @param dropEveryFourth whether every fourth kick is left out of the audio
+     *     (like a soft or masked hit), from the sixth beat on
+     */
+    private List<Long> beatTimes(long delayMs, boolean tempoSync, boolean dropEveryFourth) {
         AudioAnalyzer.clock = () -> now;
         AudioAnalyzer analyzer = new AudioAnalyzer(48);
         analyzer.setDelayMs(delayMs);
+        analyzer.setTempoSync(tempoSync);
         int bins = 512;
         int rate = 44100;
         float binHz = rate / (2f * bins);
@@ -36,7 +45,9 @@ public class AudioAnalyzerTest {
             while (nextCapture <= t) {
                 float[] mags = new float[bins];
                 float sinceKick = (nextCapture / 1000f) % 0.5f;
-                float kick = (float) Math.exp(-sinceKick * 9);
+                long kickIndex = nextCapture / 500;
+                boolean dropped = dropEveryFourth && kickIndex >= 6 && kickIndex % 4 == 3;
+                float kick = dropped ? 0f : (float) Math.exp(-sinceKick * 9);
                 for (int k = 0; k < bins; k++) {
                     float f = k * binHz;
                     float v = 0.01f * random.nextFloat();
@@ -74,6 +85,19 @@ public class AudioAnalyzerTest {
         for (long beat : beatTimes(200)) {
             long sinceKick = beat % 500;
             assertTrue("beat at " + beat + " not ~200 ms after a kick", sinceKick >= 190 && sinceKick <= 230);
+        }
+    }
+
+    @Test
+    public void tempoSyncFillsInMissedKicksOnTheBeat() {
+        // Kicks 7, 11 and 15 are missing from the audio.
+        List<Long> plain = beatTimes(0, false, true);
+        List<Long> synced = beatTimes(0, true, true);
+        assertTrue("plain detection misses them: " + plain, plain.size() <= 12);
+        assertTrue("tempo sync fills them in: " + synced, synced.size() >= 14);
+        for (long beat : synced) {
+            long off = Math.min(beat % 500, 500 - beat % 500);
+            assertTrue("beat at " + beat + " is off the grid", off <= 60);
         }
     }
 }

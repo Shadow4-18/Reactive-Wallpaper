@@ -45,6 +45,15 @@ public class MainActivity extends Activity {
     private OutputRoute route;
     private TiltSensor tilt;
     private TextView routeLabel;
+    private TextView tempoLabel;
+    /** Refreshes the tempo readout while the editor is open. */
+    private final Runnable tempoTicker = new Runnable() {
+        @Override
+        public void run() {
+            updateTempoLabel();
+            mainHandler.postDelayed(this, 500);
+        }
+    };
     private boolean demoOn;
     private PreviewView preview;
     private TextView permissionNote;
@@ -386,6 +395,17 @@ public class MainActivity extends Activity {
             s.beatSensitivity = v;
             applyAudioSettings();
         }, v -> Math.round(v * 100) + "%");
+        ui.toggle(sound, "Lock to the song's tempo", () -> s.tempoSync, v -> {
+            s.tempoSync = v;
+            applyAudioSettings();
+        });
+        ui.hint(sound, "Learns the beat from the music, then lands beat effects exactly on it, "
+                + "including soft beats that would be missed.");
+        tempoLabel = new TextView(this);
+        tempoLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        tempoLabel.setTextColor(getColor(R.color.accent));
+        sound.addView(tempoLabel);
+        updateTempoLabel();
         ui.label(sound, "Sync: if the wallpaper reacts before you hear the beat, add delay. "
                 + "Bluetooth usually needs 150–300 ms. Calibrate to measure it.");
         Button calibrate = new Button(this);
@@ -481,6 +501,8 @@ public class MainActivity extends Activity {
         super.onResume();
         resumed = true;
         route.start();
+        mainHandler.removeCallbacks(tempoTicker);
+        mainHandler.post(tempoTicker);
         applyAudioSettings();
         updatePermissionNote();
         // The wallpaper may have been set or changed while we were away.
@@ -501,6 +523,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        mainHandler.removeCallbacks(tempoTicker);
         preview.setRunning(false);
         audio.stop();
         demo.stop();
@@ -753,6 +776,16 @@ public class MainActivity extends Activity {
                 loadPreviewImage();
             });
         });
+    }
+
+    private void updateTempoLabel() {
+        if (tempoLabel == null) {
+            return;
+        }
+        float bpm = analyzer.bpm();
+        tempoLabel.setText(!settings.tempoSync ? "Tempo: off"
+                : bpm > 0f ? "Tempo: " + Math.round(bpm) + " BPM (locked)"
+                : "Tempo: listening… play some music");
     }
 
     private boolean isOurs(WallpaperInfo info) {

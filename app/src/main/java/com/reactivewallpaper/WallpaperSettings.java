@@ -155,6 +155,8 @@ final class WallpaperSettings {
     float smoothing = 0.4f;
     /** 0 = only strong hits .. 1 = nearly every bass hit */
     float beatSensitivity = 0.5f;
+    /** Learn the song's tempo and land beat effects on its grid, filling in missed beats. */
+    boolean tempoSync = true;
     /** How long to hold the visuals back so they match what is heard, in ms. */
     int syncSpeakerMs = 60;
     int syncBluetoothMs = 220;
@@ -357,6 +359,7 @@ final class WallpaperSettings {
         s.sensitivity = p.getFloat("sensitivity", s.sensitivity);
         s.smoothing = p.getFloat("smoothing", s.smoothing);
         s.beatSensitivity = p.getFloat("beatSensitivity", s.beatSensitivity);
+        s.tempoSync = p.getBoolean("tempoSync", s.tempoSync);
         s.syncSpeakerMs = p.getInt("syncSpeakerMs", s.syncSpeakerMs);
         s.syncBluetoothMs = p.getInt("syncBluetoothMs", s.syncBluetoothMs);
         s.source = p.getInt("source", s.source);
@@ -458,6 +461,7 @@ final class WallpaperSettings {
         w.putFloat("sensitivity", sensitivity);
         w.putFloat("smoothing", smoothing);
         w.putFloat("beatSensitivity", beatSensitivity);
+        w.putBoolean("tempoSync", tempoSync);
         w.putInt("syncSpeakerMs", syncSpeakerMs);
         w.putInt("syncBluetoothMs", syncBluetoothMs);
         w.putInt("source", source);
@@ -590,6 +594,7 @@ final class WallpaperSettings {
         analyzer.setSensitivity(sensitivity);
         analyzer.setSmoothing(smoothing);
         analyzer.setBeatSensitivity(beatSensitivity);
+        analyzer.setTempoSync(tempoSync);
         // The microphone already hears the sound late, so it never needs holding back.
         analyzer.setDelayMs(delayed && source == SOURCE_SYSTEM ? (bluetooth ? syncBluetoothMs : syncSpeakerMs) : 0);
     }

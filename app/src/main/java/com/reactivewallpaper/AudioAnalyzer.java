@@ -56,6 +56,15 @@ final class AudioAnalyzer {
     private long lastFrameTime;
     private long lastBeatTime;
 
+    // Tempo sync: learned from detected beats, then used to place beats on the grid.
+    private final TempoTracker tempo = new TempoTracker();
+    private boolean tempoSync = true;
+    /** Display time (capture clock minus delay) of the last beat pulse shown. */
+    private long lastPulseDue = Long.MIN_VALUE / 2;
+    private long lastGridIndex = Long.MIN_VALUE;
+    /** Typical strength of detected beats, for the ones the grid fills in. */
+    private float typicalBeat = 0.8f;
+
     AudioAnalyzer(int bandCount) {
         setBandCount(bandCount);
     }
@@ -82,6 +91,11 @@ final class AudioAnalyzer {
     /** 0 = only strong hits count as beats .. 1 = nearly every bass hit. */
     void setBeatSensitivity(float beatSensitivity) {
         this.beatSensitivity = beatSensitivity;
+    }
+
+    /** Whether beats follow the learned tempo (see {@link TempoTracker}). */
+    void setTempoSync(boolean tempoSync) {
+        this.tempoSync = tempoSync;
     }
 
     /** Shows audio this many milliseconds after it was captured. */
@@ -148,8 +162,19 @@ final class AudioAnalyzer {
             clearTargets();
             processedSequence = -1;
         } else if (sequence != processedSequence && binCount > 1) {
-            analyzeFrame(binCount, rate, frameTime);
+            analyzeFrame(binCount, rate, frameTime, due);
             processedSequence = sequence;
+        }
+        if (tempoSync && tempo.isLockedAt(due)) {
+            // A grid beat is due: show it unless a detected beat already did.
+            long index = tempo.gridIndexAt(due);
+            if (index != lastGridIndex) {
+                lastGridIndex = index;
+                if (due - lastPulseDue > 0.45f * tempo.period()) {
+                    beat = Math.max(beat, typicalBeat);
+                    lastPulseDue = due;
+                }
+            }
         }
 
         // Instant attack so hits land on time; release speed set by smoothing.
@@ -175,7 +200,7 @@ final class AudioAnalyzer {
     }
 
     /** Runs once per captured audio frame. */
-    private void analyzeFrame(int binCount, int rate, long frameTime) {
+    private void analyzeFrame(int binCount, int rate, long frameTime, long due) {
         float frameDt = lastFrameTime > 0 ? Math.min(0.2f, (frameTime - lastFrameTime) / 1000f) : 0.03f;
         lastFrameTime = frameTime;
 
@@ -242,8 +267,16 @@ final class AudioAnalyzer {
         float minimum = 0.03f + (1f - beatSensitivity) * 0.12f;
         if (flux > fluxAverage * multiplier + minimum && bassNorm > 0.15f
                 && frameTime - lastBeatTime > 150) {
-            beat = Math.min(1f, 0.6f + 0.4f * sensitivity * bassNorm);
+            float strength = Math.min(1f, 0.6f + 0.4f * sensitivity * bassNorm);
             lastBeatTime = frameTime;
+            tempo.onset(frameTime);
+            typicalBeat += (strength - typicalBeat) * 0.2f;
+            // Locked to a tempo, a hit just after a grid beat is that same beat; don't kick twice.
+            boolean sameBeat = tempoSync && tempo.isLocked() && due - lastPulseDue < 0.3f * tempo.period();
+            if (!sameBeat) {
+                beat = strength;
+                lastPulseDue = due;
+            }
         }
         fluxAverage += (flux - fluxAverage) * Math.min(1f, frameDt * 2.5f);
     }
@@ -268,6 +301,17 @@ final class AudioAnalyzer {
     /** Capture time (uptime ms) of the most recent detected beat, ignoring the sync delay. */
     long lastBeatTime() {
         return lastBeatTime;
+    }
+
+    /** The song's tempo in beats per minute, or 0 while it isn't known. */
+    float bpm() {
+        return tempo.isLockedAt(clock.getAsLong() - delayMs) ? tempo.bpm() : 0f;
+    }
+
+    /** 0 on each beat of the learned tempo, rising to 1 before the next; 0 while unknown. */
+    float beatPhase() {
+        long due = clock.getAsLong() - delayMs;
+        return tempo.isLockedAt(due) ? tempo.phaseAt(due) : 0f;
     }
 
     float level() {
