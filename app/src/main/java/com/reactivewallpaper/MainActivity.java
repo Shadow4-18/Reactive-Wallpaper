@@ -108,7 +108,13 @@ public class MainActivity extends Activity {
         // The editor works on a draft; the wallpaper only changes when it's applied.
         settings = WallpaperSettings.loadDraft(this);
         analyzer = new AudioAnalyzer(settings.barCount);
-        route = new OutputRoute(this, bluetooth -> applyAudioSettings());
+        route = new OutputRoute(this, bluetooth -> {
+            applyAudioSettings();
+            // The Bluetooth delay slider belongs to whichever device is connected.
+            if (ui != null) {
+                buildControls();
+            }
+        });
         applyAudioSettings();
         audio = new AudioController(this, analyzer);
         demo = new DemoAudioInput(analyzer);
@@ -549,10 +555,33 @@ public class MainActivity extends Activity {
             s.syncSpeakerMs = Math.round(v);
             applyAudioSettings();
         }, v -> Math.round(v) + " ms");
-        ui.slider(sound, "Delay – Bluetooth", 0f, 600f, () -> s.syncBluetoothMs, v -> {
-            s.syncBluetoothMs = Math.round(v);
-            applyAudioSettings();
-        }, v -> Math.round(v) + " ms");
+        String device = route.deviceName();
+        if (device != null) {
+            // The connected Bluetooth device's own delay (saved for it on this phone).
+            ui.slider(sound, "Delay – " + device, 0f, 600f, () -> {
+                Integer own = WallpaperSettings.deviceDelay(this, device);
+                return own != null ? own : s.syncBluetoothMs;
+            }, v -> {
+                WallpaperSettings.setDeviceDelay(this, device, Math.round(v));
+                applyAudioSettings();
+            }, v -> Math.round(v) + " ms");
+            if (WallpaperSettings.deviceDelay(this, device) != null) {
+                Button forget = new Button(this, null, android.R.attr.borderlessButtonStyle);
+                forget.setText("Use the general Bluetooth delay for " + device);
+                forget.setTextColor(getColor(R.color.accent));
+                forget.setOnClickListener(v -> {
+                    WallpaperSettings.setDeviceDelay(this, device, null);
+                    applyAudioSettings();
+                    buildControls();
+                });
+                sound.addView(forget);
+            }
+        }
+        ui.slider(sound, device != null ? "Delay – other Bluetooth devices" : "Delay – Bluetooth", 0f, 600f,
+                () -> s.syncBluetoothMs, v -> {
+                    s.syncBluetoothMs = Math.round(v);
+                    applyAudioSettings();
+                }, v -> Math.round(v) + " ms");
         ui.label(sound, "React to");
         ui.choice(sound, new String[] {"Phone audio", "Microphone"},
                 new int[] {WallpaperSettings.SOURCE_SYSTEM, WallpaperSettings.SOURCE_MIC},
@@ -692,15 +721,21 @@ public class MainActivity extends Activity {
 
     private void applyAudioSettings() {
         // The demo beat is generated in sync with the preview, so it is never delayed.
-        settings.applyTo(analyzer, route.isBluetooth(), !demoOn);
+        settings.applyTo(analyzer, route.isBluetooth(), !demoOn,
+                WallpaperSettings.deviceDelay(this, route.deviceName()));
         updateRouteLabel();
     }
 
     private void updateRouteLabel() {
         if (routeLabel != null) {
-            routeLabel.setText(route.isBluetooth()
-                    ? "Playing through Bluetooth now: the Bluetooth delay is in use."
-                    : "Playing through the phone speaker or wired headphones now.");
+            String device = route.deviceName();
+            Integer own = WallpaperSettings.deviceDelay(this, device);
+            routeLabel.setText(!route.isBluetooth()
+                    ? "Playing through the phone speaker or wired headphones now."
+                    : device == null ? "Playing through Bluetooth now: the Bluetooth delay is in use."
+                    : own != null ? "Playing through " + device + " now: its own delay (" + own + " ms) is in use."
+                    : "Playing through " + device + " now: the general Bluetooth delay is in use. "
+                            + "Calibrate to give it its own.");
         }
     }
 
@@ -784,6 +819,8 @@ public class MainActivity extends Activity {
             @Override
             public void onMeasured(boolean bluetooth, int delayMs) {
                 if (bluetooth) {
+                    // Kept for this device, and as the starting point for ones not calibrated yet.
+                    WallpaperSettings.setDeviceDelay(MainActivity.this, route.deviceName(), delayMs);
                     settings.syncBluetoothMs = delayMs;
                 } else {
                     settings.syncSpeakerMs = delayMs;

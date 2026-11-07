@@ -516,7 +516,8 @@ public class ReactiveWallpaperService extends WallpaperService {
         }
 
         private void applyAudio() {
-            current().applyTo(analyzer, route.isBluetooth(), true);
+            current().applyTo(analyzer, route.isBluetooth(), true,
+                    WallpaperSettings.deviceDelay(context, route.deviceName()));
         }
 
         private void updateTilt() {

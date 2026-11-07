@@ -7,7 +7,10 @@ import android.media.AudioManager;
 import android.os.Handler;
 import android.os.Looper;
 
-/** Tracks whether sound is going to Bluetooth, which plays it noticeably later. */
+/**
+ * Tracks whether sound is going to Bluetooth, which plays it noticeably later,
+ * and which Bluetooth device (each has its own delay).
+ */
 final class OutputRoute {
     interface Listener {
         void onRouteChanged(boolean bluetooth);
@@ -16,6 +19,8 @@ final class OutputRoute {
     private final AudioManager audioManager;
     private final Listener listener;
     private boolean bluetooth;
+    /** The Bluetooth device's name, or null (not Bluetooth, or it has no name). */
+    private String deviceName;
     private boolean registered;
 
     private final AudioDeviceCallback callback = new AudioDeviceCallback() {
@@ -34,6 +39,11 @@ final class OutputRoute {
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         this.listener = listener;
         bluetooth = detect();
+    }
+
+    /** The Bluetooth device sound goes to (e.g. "Galaxy Buds3 Pro"), or null. */
+    String deviceName() {
+        return bluetooth ? deviceName : null;
     }
 
     void start() {
@@ -56,14 +66,17 @@ final class OutputRoute {
     }
 
     private void refresh() {
+        String previousName = deviceName;
         boolean now = detect();
-        if (now != bluetooth) {
+        boolean nameChanged = previousName == null ? deviceName != null : !previousName.equals(deviceName);
+        if (now != bluetooth || (now && nameChanged)) {
             bluetooth = now;
             listener.onRouteChanged(now);
         }
     }
 
     private boolean detect() {
+        deviceName = null;
         if (audioManager == null) {
             return false;
         }
@@ -74,6 +87,9 @@ final class OutputRoute {
                 case AudioDeviceInfo.TYPE_BLE_HEADSET:
                 case AudioDeviceInfo.TYPE_BLE_SPEAKER:
                 case AudioDeviceInfo.TYPE_BLE_BROADCAST:
+                    CharSequence name = device.getProductName();
+                    String clean = name != null ? name.toString().trim() : "";
+                    deviceName = clean.isEmpty() ? null : clean;
                     return true;
                 default:
                     break;

@@ -129,6 +129,7 @@ final class Diagnostics {
             line(r, "Couldn't read wallpaper state: " + e);
         }
         line(r, "Lock screen look: " + WallpaperSettings.lockLookId(context));
+        line(r, "Bluetooth device delays (ms): " + WallpaperSettings.deviceDelays(context));
         line(r, "Rotation: mode " + WallpaperSettings.rotationMode(context) + ", "
                 + WallpaperSettings.rotationIds(context).size() + " looks, every "
                 + WallpaperSettings.rotationMinutes(context) + " min");

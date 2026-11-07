@@ -357,6 +357,44 @@ final class WallpaperSettings {
         return TimeOfDay.FIXED.clone();
     }
 
+    private static final String KEY_DEVICE_DELAYS = "bluetoothDelays";
+
+    /** A Bluetooth device's own calibrated delay, or null if it has none (use the general one). */
+    static Integer deviceDelay(Context context, String device) {
+        if (device == null) {
+            return null;
+        }
+        try {
+            org.json.JSONObject all = new org.json.JSONObject(prefs(context).getString(KEY_DEVICE_DELAYS, "{}"));
+            return all.has(device) ? Math.max(0, Math.min(600, all.getInt(device))) : null;
+        } catch (org.json.JSONException e) {
+            return null;
+        }
+    }
+
+    /** Every Bluetooth device's own delay, as saved (for diagnostics). */
+    static String deviceDelays(Context context) {
+        return prefs(context).getString(KEY_DEVICE_DELAYS, "{}");
+    }
+
+    /** Saves (or with null, forgets) a Bluetooth device's own delay. */
+    static void setDeviceDelay(Context context, String device, Integer ms) {
+        if (device == null) {
+            return;
+        }
+        try {
+            org.json.JSONObject all = new org.json.JSONObject(prefs(context).getString(KEY_DEVICE_DELAYS, "{}"));
+            if (ms == null) {
+                all.remove(device);
+            } else {
+                all.put(device, (int) ms);
+            }
+            prefs(context).edit().putString(KEY_DEVICE_DELAYS, all.toString()).apply();
+        } catch (org.json.JSONException e) {
+            prefs(context).edit().remove(KEY_DEVICE_DELAYS).apply();
+        }
+    }
+
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }
@@ -714,12 +752,21 @@ final class WallpaperSettings {
 
     /** Applies the audio tuning to an analyzer for the current output route. */
     void applyTo(AudioAnalyzer analyzer, boolean bluetooth, boolean delayed) {
+        applyTo(analyzer, bluetooth, delayed, null);
+    }
+
+    /**
+     * @param deviceDelayMs the connected Bluetooth device's own calibrated delay,
+     *     or null to use the general Bluetooth delay
+     */
+    void applyTo(AudioAnalyzer analyzer, boolean bluetooth, boolean delayed, Integer deviceDelayMs) {
         analyzer.setBandCount(barCount);
         analyzer.setSensitivity(sensitivity);
         analyzer.setSmoothing(smoothing);
         analyzer.setBeatSensitivity(beatSensitivity);
         analyzer.setTempoSync(tempoSync);
         // The microphone already hears the sound late, so it never needs holding back.
-        analyzer.setDelayMs(delayed && source == SOURCE_SYSTEM ? (bluetooth ? syncBluetoothMs : syncSpeakerMs) : 0);
+        int bluetoothMs = deviceDelayMs != null ? deviceDelayMs : syncBluetoothMs;
+        analyzer.setDelayMs(delayed && source == SOURCE_SYSTEM ? (bluetooth ? bluetoothMs : syncSpeakerMs) : 0);
     }
 }
