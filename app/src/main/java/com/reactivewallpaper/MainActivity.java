@@ -1,41 +1,26 @@
 package com.reactivewallpaper;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.WallpaperInfo;
 import android.app.WallpaperManager;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.Outline;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewOutlineProvider;
 import android.widget.Button;
-import android.widget.CheckBox;
-import android.widget.EditText;
-import android.widget.HorizontalScrollView;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.RadioButton;
-import android.widget.RadioGroup;
-import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.File;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -46,8 +31,6 @@ public class MainActivity extends Activity {
     private static final int REQUEST_IMAGE = 1;
     private static final int REQUEST_AUDIO = 2;
     private static final int REQUEST_PAINT = 3;
-    private static final int REQUEST_EXPORT = 4;
-    private static final int REQUEST_IMPORT = 5;
     private static final int REQUEST_DIAGNOSTICS = 6;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -70,15 +53,11 @@ public class MainActivity extends Activity {
     private Controls ui;
     private View circleOptions;
     private View hueOption;
-    private LinearLayout looksRow;
-    private Button lockLookButton;
-    private Button rotationButton;
     private AlbumArtSource artSource;
     /** A newer release found on GitHub, shown as a banner at the top of the controls. */
-    private Updater.Release availableUpdate;
+    private UpdateUi updates;
+    private LooksUi looksUi;
     private Bitmap art;
-    /** Looks waiting for the user to pick where to save the export. */
-    private java.util.List<PresetStore.Preset> pendingExport;
     private final Map<String, Boolean> expandedSections = new HashMap<>();
     private boolean resumed;
 
@@ -155,15 +134,29 @@ public class MainActivity extends Activity {
         findViewById(R.id.discard).setOnClickListener(v -> discardChanges());
 
         controls = findViewById(R.id.controls);
+        updates = new UpdateUi(this, executor, mainHandler, this::buildControls);
+        looksUi = new LooksUi(this, executor, mainHandler, new LooksUi.Host() {
+            @Override
+            public WallpaperSettings settings() {
+                return settings;
+            }
+
+            @Override
+            public void onLookLoaded(WallpaperSettings next, boolean newPicture) {
+                settings = next;
+                applyAudioSettings();
+                preview.setSettings(settings);
+                buildControls();
+                if (newPicture) {
+                    loadPreviewImage();
+                }
+                updateApplyState();
+            }
+        });
         buildControls();
 
         if (!AudioController.hasPermission(this)) {
             requestAudioPermission();
-        }
-        // An update found before shows at once, even offline, until it's installed.
-        availableUpdate = Updater.cachedUpdate(this);
-        if (availableUpdate != null) {
-            buildControls();
         }
     }
 
@@ -181,55 +174,10 @@ public class MainActivity extends Activity {
             }
         });
         WallpaperSettings s = settings;
-        if (availableUpdate != null) {
-            addUpdateBanner();
-        }
+        updates.addBanner(controls);
 
         LinearLayout looks = ui.section("Looks", true);
-        HorizontalScrollView scroll = new HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
-        looksRow = new LinearLayout(this);
-        looksRow.setOrientation(LinearLayout.HORIZONTAL);
-        looksRow.setPadding(0, dp(6), 0, dp(4));
-        scroll.addView(looksRow);
-        looks.addView(scroll);
-        ui.hint(looks, "Tap to load a look into the editor. Long-press your own looks to update, rename, export or delete them.");
-        Button saveLook = new Button(this);
-        saveLook.setText("Save current look");
-        saveLook.setOnClickListener(v -> saveLookDialog());
-        looks.addView(saveLook, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        lockLookButton = new Button(this);
-        lockLookButton.setOnClickListener(v -> chooseLockLook());
-        looks.addView(lockLookButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        rotationButton = new Button(this);
-        rotationButton.setOnClickListener(v -> rotationDialog());
-        looks.addView(rotationButton, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        LinearLayout shareRow = new LinearLayout(this);
-        Button importLooks = new Button(this);
-        importLooks.setText("Import looks");
-        importLooks.setOnClickListener(v -> startImport());
-        Button exportLooks = new Button(this);
-        exportLooks.setText("Export all");
-        exportLooks.setOnClickListener(v -> {
-            java.util.List<PresetStore.Preset> mine = new java.util.ArrayList<>();
-            for (PresetStore.Preset p : PresetStore.all(this)) {
-                if (!p.builtIn) {
-                    mine.add(p);
-                }
-            }
-            if (mine.isEmpty()) {
-                Toast.makeText(this, "Save a look first.", Toast.LENGTH_SHORT).show();
-            } else {
-                startExport(mine, "Resona looks");
-            }
-        });
-        shareRow.addView(importLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        shareRow.addView(exportLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        looks.addView(shareRow);
-        refreshLooks();
+        looksUi.build(ui, looks);
 
         LinearLayout fit = ui.section("Image fit", true);
         ui.choiceColumn(fit, new String[] {"Fill (crop to fill the screen)", "Fit (show the whole image)",
@@ -282,7 +230,7 @@ public class MainActivity extends Activity {
         ui.toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
             s.albumArt = v;
             if (v && !AlbumArtSource.hasAccess(this)) {
-                askForMediaAccess();
+                AlbumArtSource.askForAccess(this);
             }
             updateArtSource();
             loadPreviewImage();
@@ -447,7 +395,7 @@ public class MainActivity extends Activity {
         ui.label(about, "Resona " + Updater.installedVersion(this));
         Button check = new Button(this);
         check.setText("Check for updates");
-        check.setOnClickListener(v -> checkForUpdate(true));
+        check.setOnClickListener(v -> updates.check(true));
         about.addView(check, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         ui.toggle(about, "Check automatically when opening the app",
@@ -488,12 +436,12 @@ public class MainActivity extends Activity {
         updateApplyState();
         // Coming back to the app (not just launching it) is when a new release is noticed.
         if (Updater.claimAutoCheck(this)) {
-            checkForUpdate(false);
+            updates.check(false);
         }
         tilt.start();
         renderer.setMediaPlaying(true);
         updateArtSource();
-        refreshLooks();
+        looksUi.refresh();
         restartAudio();
         preview.setRunning(true);
     }
@@ -534,409 +482,12 @@ public class MainActivity extends Activity {
 
     // ---- Looks (presets) ---------------------------------------------------
 
-    private void refreshLooks() {
-        looksRow.removeAllViews();
-        for (PresetStore.Preset preset : PresetStore.all(this)) {
-            looksRow.addView(lookItem(preset));
-        }
-        PresetStore.Preset lock = PresetStore.find(this, WallpaperSettings.lockLookId(this));
-        lockLookButton.setText("Lock screen: " + (lock == null ? "same as home" : lock.name));
-        rotationButton.setText("Rotate looks: " + rotationSummary());
-    }
-
-    private String rotationSummary() {
-        int mode = WallpaperSettings.rotationMode(this);
-        int count = 0;
-        for (String id : WallpaperSettings.rotationIds(this)) {
-            if (PresetStore.find(this, id) != null) {
-                count++;
-            }
-        }
-        if (mode == WallpaperSettings.ROTATE_OFF || count < 2) {
-            return "off";
-        }
-        String when = mode == WallpaperSettings.ROTATE_MINUTES
-                ? "every " + WallpaperSettings.rotationMinutes(this) + " min"
-                : mode == WallpaperSettings.ROTATE_SONG ? "every song" : "on double-tap";
-        return count + " looks, " + when;
-    }
-
-    /** Picks which saved looks the home screen cycles through, and when it moves on. */
-    private void rotationDialog() {
-        java.util.List<PresetStore.Preset> all = PresetStore.all(this);
-        java.util.List<String> chosen = new java.util.ArrayList<>(WallpaperSettings.rotationIds(this));
-        int[] mode = {WallpaperSettings.rotationMode(this)};
-        int[] minutes = {WallpaperSettings.rotationMinutes(this)};
-
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(24), dp(8), dp(24), 0);
-        ui.label(box, "Switch looks");
-        TextView minutesLabel = new TextView(this);
-        SeekBar minutesBar = new SeekBar(this);
-        RadioGroup modes = new RadioGroup(this);
-        String[] modeNames = {"Off", "Every few minutes", "Every new song", "Double-tap the home screen"};
-        int[] modeValues = {WallpaperSettings.ROTATE_OFF, WallpaperSettings.ROTATE_MINUTES,
-                WallpaperSettings.ROTATE_SONG, WallpaperSettings.ROTATE_DOUBLE_TAP};
-        for (int i = 0; i < modeNames.length; i++) {
-            RadioButton b = new RadioButton(this);
-            b.setId(View.generateViewId());
-            b.setText(modeNames[i]);
-            b.setTextColor(getColor(R.color.text_primary));
-            int value = modeValues[i];
-            b.setChecked(value == mode[0]);
-            b.setOnClickListener(v -> {
-                mode[0] = value;
-                minutesBar.setEnabled(value == WallpaperSettings.ROTATE_MINUTES);
-            });
-            modes.addView(b);
-        }
-        box.addView(modes);
-        minutesLabel.setTextColor(getColor(R.color.text_secondary));
-        minutesLabel.setText("Every " + minutes[0] + " min");
-        box.addView(minutesLabel);
-        minutesBar.setMax(119);
-        minutesBar.setProgress(minutes[0] - 1);
-        minutesBar.setEnabled(mode[0] == WallpaperSettings.ROTATE_MINUTES);
-        minutesBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                minutes[0] = progress + 1;
-                minutesLabel.setText("Every " + minutes[0] + " min");
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-            }
-        });
-        box.addView(minutesBar);
-        ui.label(box, "Looks to rotate through");
-        for (PresetStore.Preset preset : all) {
-            CheckBox check = new CheckBox(this);
-            check.setText(preset.name);
-            check.setTextColor(getColor(R.color.text_primary));
-            check.setChecked(chosen.contains(preset.id));
-            check.setOnCheckedChangeListener((b, on) -> {
-                chosen.remove(preset.id);
-                if (on) {
-                    chosen.add(preset.id);
-                }
-            });
-            box.addView(check);
-        }
-        android.widget.ScrollView scroll = new android.widget.ScrollView(this);
-        scroll.addView(box);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Rotate looks")
-                .setView(scroll)
-                .setPositiveButton("Save", (d, which) -> {
-                    // Keep the list in the order the looks appear.
-                    java.util.List<String> ordered = new java.util.ArrayList<>();
-                    for (PresetStore.Preset p : all) {
-                        if (chosen.contains(p.id)) {
-                            ordered.add(p.id);
-                        }
-                    }
-                    WallpaperSettings.setRotation(this, ordered, mode[0], minutes[0]);
-                    refreshLooks();
-                    if (mode[0] != WallpaperSettings.ROTATE_OFF && ordered.size() < 2) {
-                        Toast.makeText(this, "Pick at least two looks to rotate.", Toast.LENGTH_LONG).show();
-                    } else if (mode[0] == WallpaperSettings.ROTATE_SONG && !AlbumArtSource.hasAccess(this)) {
-                        askForMediaAccess();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void askForMediaAccess() {
-        new AlertDialog.Builder(this)
-                .setTitle("Allow access to what's playing")
-                .setMessage("To see the current song, Android needs Resona to have notification access. "
-                        + "On the next screen, turn on Resona. Resona only looks at what's playing and "
-                        + "never reads your notifications.")
-                .setPositiveButton("Open settings", (d, w) -> {
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
-                    } catch (ActivityNotFoundException e) {
-                        Toast.makeText(this, "Couldn't open the settings screen.", Toast.LENGTH_LONG).show();
-                    }
-                })
-                .setNegativeButton("Not now", null)
-                .show();
-    }
-
     private void updateArtSource() {
         if (resumed && settings.albumArt) {
             artSource.start();
         } else {
             artSource.stop();
         }
-    }
-
-    private void chooseLockLook() {
-        java.util.List<PresetStore.Preset> all = PresetStore.all(this);
-        String[] names = new String[all.size() + 1];
-        names[0] = "Same as home screen";
-        for (int i = 0; i < all.size(); i++) {
-            names[i + 1] = all.get(i).name;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("Lock screen look")
-                .setItems(names, (d, which) -> {
-                    // Applies straight away: it picks between saved looks, it doesn't edit one.
-                    WallpaperSettings.setLockLookId(this, which == 0 ? "" : all.get(which - 1).id);
-                    refreshLooks();
-                    Toast.makeText(this, which == 0 ? "Lock screen matches the home screen"
-                            : "Lock screen will show “" + names[which] + "”", Toast.LENGTH_SHORT).show();
-                })
-                .show();
-    }
-
-    private void startExport(java.util.List<PresetStore.Preset> presets, String fileName) {
-        pendingExport = presets;
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/octet-stream");
-        intent.putExtra(Intent.EXTRA_TITLE, fileName + ".resona");
-        try {
-            startActivityForResult(intent, REQUEST_EXPORT);
-        } catch (ActivityNotFoundException e) {
-            Toast.makeText(this, "No app available to save files.", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void startImport() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
-        try {
-            startActivityForResult(intent, REQUEST_IMPORT);
-        } catch (ActivityNotFoundException e) {
-            Toast.makeText(this, "No app available to open files.", Toast.LENGTH_LONG).show();
-        }
-    }
-
-    private void finishExport(Uri uri) {
-        java.util.List<PresetStore.Preset> presets = pendingExport;
-        pendingExport = null;
-        if (presets == null) {
-            return;
-        }
-        executor.execute(() -> {
-            String message;
-            try (java.io.OutputStream out = getContentResolver().openOutputStream(uri)) {
-                if (out == null) {
-                    throw new java.io.IOException("Could not open the file");
-                }
-                PresetStore.export(this, presets, out);
-                message = presets.size() == 1 ? "Exported “" + presets.get(0).name + "”"
-                        : "Exported " + presets.size() + " looks";
-            } catch (java.io.IOException | SecurityException e) {
-                message = "Export failed: " + e.getMessage();
-            }
-            String text = message;
-            mainHandler.post(() -> Toast.makeText(this, text, Toast.LENGTH_LONG).show());
-        });
-    }
-
-    private void finishImport(Uri uri) {
-        executor.execute(() -> {
-            String message;
-            try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
-                if (in == null) {
-                    throw new java.io.IOException("Could not open the file");
-                }
-                int count = PresetStore.importFrom(this, in);
-                message = count == 0 ? "No looks found in that file."
-                        : count == 1 ? "Imported 1 look" : "Imported " + count + " looks";
-            } catch (java.io.IOException | SecurityException e) {
-                message = "Couldn't import: " + e.getMessage();
-            }
-            String text = message;
-            mainHandler.post(() -> {
-                if (!isDestroyed()) {
-                    refreshLooks();
-                    Toast.makeText(this, text, Toast.LENGTH_LONG).show();
-                }
-            });
-        });
-    }
-
-    private View lookItem(PresetStore.Preset preset) {
-        LinearLayout item = new LinearLayout(this);
-        item.setOrientation(LinearLayout.VERTICAL);
-        item.setGravity(Gravity.CENTER_HORIZONTAL);
-        item.setPadding(0, 0, dp(12), 0);
-
-        ImageView thumb = new ImageView(this);
-        thumb.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        thumb.setImageResource(R.drawable.wallpaper_thumbnail);
-        final float radius = dp(14);
-        thumb.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(View view, Outline outline) {
-                outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
-            }
-        });
-        thumb.setClipToOutline(true);
-        item.addView(thumb, new LinearLayout.LayoutParams(dp(72), dp(96)));
-        if (preset.hasImage) {
-            int w = dp(72);
-            int h = dp(96);
-            executor.execute(() -> {
-                Bitmap bitmap = ImageStore.load(PresetStore.image(this, preset), w, h);
-                mainHandler.post(() -> {
-                    if (bitmap != null && !isDestroyed()) {
-                        thumb.setImageBitmap(bitmap);
-                    }
-                });
-            });
-        }
-
-        TextView name = new TextView(this);
-        name.setText(preset.name);
-        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        name.setTextColor(getColor(R.color.text_primary));
-        name.setSingleLine(true);
-        name.setEllipsize(TextUtils.TruncateAt.END);
-        name.setGravity(Gravity.CENTER_HORIZONTAL);
-        name.setPadding(0, dp(4), 0, 0);
-        item.addView(name, new LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        item.setOnClickListener(v -> applyLook(preset));
-        item.setOnLongClickListener(v -> {
-            lookMenu(preset);
-            return true;
-        });
-        return item;
-    }
-
-    private void applyLook(PresetStore.Preset preset) {
-        WallpaperSettings current = settings;
-        executor.execute(() -> {
-            WallpaperSettings next = PresetStore.apply(this, preset, current);
-            mainHandler.post(() -> {
-                if (isDestroyed()) {
-                    return;
-                }
-                settings = next;
-                applyAudioSettings();
-                preview.setSettings(settings);
-                buildControls();
-                if (preset.hasImage) {
-                    loadPreviewImage();
-                }
-                updateApplyState();
-                Toast.makeText(this, "Loaded “" + preset.name + "”", Toast.LENGTH_SHORT).show();
-            });
-        });
-    }
-
-    private void saveLookDialog() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(24), dp(8), dp(24), 0);
-        EditText name = new EditText(this);
-        name.setSingleLine(true);
-        name.setHint("Name");
-        name.setText("My look " + (PresetStore.all(this).size() - 3));
-        name.selectAll();
-        box.addView(name);
-        CheckBox includeImage = new CheckBox(this);
-        includeImage.setText("Include the current image");
-        boolean hasImage = ImageStore.hasDraftImage(this);
-        includeImage.setChecked(hasImage);
-        includeImage.setEnabled(hasImage);
-        box.addView(includeImage);
-
-        new AlertDialog.Builder(this)
-                .setTitle("Save current look")
-                .setView(box)
-                .setPositiveButton("Save", (d, which) -> {
-                    String title = name.getText().toString().trim();
-                    String finalTitle = title.isEmpty() ? "My look" : title;
-                    WallpaperSettings current = settings;
-                    boolean withImage = includeImage.isChecked();
-                    executor.execute(() -> {
-                        PresetStore.save(this, finalTitle, current, withImage);
-                        mainHandler.post(() -> {
-                            if (!isDestroyed()) {
-                                refreshLooks();
-                                Toast.makeText(this, "Saved “" + finalTitle + "”", Toast.LENGTH_SHORT).show();
-                            }
-                        });
-                    });
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private void lookMenu(PresetStore.Preset preset) {
-        if (preset.builtIn) {
-            Toast.makeText(this, "Built-in looks can't be changed. Apply it, adjust, then save your own.",
-                    Toast.LENGTH_LONG).show();
-            return;
-        }
-        String[] actions = {"Update with current look", "Rename", "Export", "Delete"};
-        new AlertDialog.Builder(this)
-                .setTitle(preset.name)
-                .setItems(actions, (d, which) -> {
-                    if (which == 0) {
-                        WallpaperSettings current = settings;
-                        executor.execute(() -> {
-                            PresetStore.update(this, preset, current);
-                            mainHandler.post(() -> {
-                                if (!isDestroyed()) {
-                                    refreshLooks();
-                                    Toast.makeText(this, "Updated “" + preset.name + "”", Toast.LENGTH_SHORT).show();
-                                }
-                            });
-                        });
-                    } else if (which == 1) {
-                        renameLookDialog(preset);
-                    } else if (which == 2) {
-                        startExport(java.util.Collections.singletonList(preset), preset.name);
-                    } else {
-                        new AlertDialog.Builder(this)
-                                .setTitle("Delete “" + preset.name + "”?")
-                                .setPositiveButton("Delete", (d2, w2) -> {
-                                    PresetStore.delete(this, preset);
-                                    refreshLooks();
-                                })
-                                .setNegativeButton("Cancel", null)
-                                .show();
-                    }
-                })
-                .show();
-    }
-
-    private void renameLookDialog(PresetStore.Preset preset) {
-        EditText name = new EditText(this);
-        name.setSingleLine(true);
-        name.setText(preset.name);
-        name.selectAll();
-        LinearLayout box = new LinearLayout(this);
-        box.setPadding(dp(24), dp(8), dp(24), 0);
-        box.addView(name, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        new AlertDialog.Builder(this)
-                .setTitle("Rename look")
-                .setView(box)
-                .setPositiveButton("Rename", (d, which) -> {
-                    String title = name.getText().toString().trim();
-                    if (!title.isEmpty()) {
-                        PresetStore.rename(this, preset, title);
-                        refreshLooks();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
     }
 
     private void addMediaWidget() {
@@ -981,141 +532,8 @@ public class MainActivity extends Activity {
         });
     }
 
-    // ---- Updates -----------------------------------------------------------
-
-    private void checkForUpdate(boolean userAsked) {
-        if (userAsked) {
-            Toast.makeText(this, "Checking for updates…", Toast.LENGTH_SHORT).show();
-        }
-        executor.execute(() -> {
-            Updater.Release release = null;
-            String error = null;
-            try {
-                release = Updater.checkForUpdate(this);
-            } catch (java.io.IOException e) {
-                error = e.getMessage();
-            }
-            Updater.Release found = release;
-            String problem = error;
-            mainHandler.post(() -> {
-                if (isDestroyed()) {
-                    return;
-                }
-                if (found != null) {
-                    availableUpdate = found;
-                    buildControls();
-                } else if (userAsked) {
-                    Toast.makeText(this, problem != null ? "Couldn't check for updates: " + problem
-                            : "You have the latest version.", Toast.LENGTH_LONG).show();
-                }
-            });
-        });
-    }
-
-    private void addUpdateBanner() {
-        LinearLayout banner = new LinearLayout(this);
-        banner.setOrientation(LinearLayout.HORIZONTAL);
-        banner.setGravity(Gravity.CENTER_VERTICAL);
-        banner.setBackgroundColor(getColor(R.color.surface));
-        banner.setPadding(dp(16), dp(8), dp(8), dp(8));
-        TextView text = new TextView(this);
-        text.setText("Resona " + availableUpdate.version + " is available");
-        text.setTextColor(getColor(R.color.text_primary));
-        text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        Button update = new Button(this, null, android.R.attr.borderlessButtonStyle);
-        update.setText("Update");
-        update.setTextColor(getColor(R.color.accent));
-        update.setOnClickListener(v -> confirmUpdate(availableUpdate));
-        banner.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        banner.addView(update);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(8);
-        controls.addView(banner, lp);
-    }
-
-    private void confirmUpdate(Updater.Release release) {
-        String notes = release.notes.isEmpty() ? "Bug fixes and improvements." : release.notes;
-        new AlertDialog.Builder(this)
-                .setTitle("Update to Resona " + release.version)
-                .setMessage(notes + "\n\nYour wallpaper, looks and settings stay as they are. "
-                        + "Android will ask you to confirm the install.")
-                .setPositiveButton("Update now", (d, w) -> startUpdate(release))
-                .setNegativeButton("Later", null)
-                .show();
-    }
-
-    private void startUpdate(Updater.Release release) {
-        if (android.os.Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-            new AlertDialog.Builder(this)
-                    .setTitle("Allow Resona to install updates")
-                    .setMessage("Android needs your OK once for Resona to install its own updates. "
-                            + "Turn on \"Allow from this source\" on the next screen, come back, and tap Update again.")
-                    .setPositiveButton("Open settings", (d, w) -> {
-                        try {
-                            startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                    Uri.parse("package:" + getPackageName())));
-                        } catch (ActivityNotFoundException e) {
-                            Toast.makeText(this, "Couldn't open the settings screen.", Toast.LENGTH_LONG).show();
-                        }
-                    })
-                    .setNegativeButton("Cancel", null)
-                    .show();
-            return;
-        }
-
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(24), dp(16), dp(24), dp(8));
-        android.widget.ProgressBar bar = new android.widget.ProgressBar(this, null,
-                android.R.attr.progressBarStyleHorizontal);
-        bar.setMax(1000);
-        TextView status = new TextView(this);
-        status.setTextColor(getColor(R.color.text_secondary));
-        status.setText("Downloading…");
-        box.addView(bar);
-        box.addView(status);
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Updating Resona")
-                .setView(box)
-                .setCancelable(false)
-                .create();
-        dialog.show();
-
-        executor.execute(() -> {
-            String error = null;
-            try {
-                java.io.File apk = Updater.download(this, release, (done, total) -> mainHandler.post(() -> {
-                    if (total > 0) {
-                        bar.setProgress((int) (done * 1000 / total));
-                        status.setText(String.format(Locale.US, "Downloading… %.1f of %.1f MB",
-                                done / 1048576f, total / 1048576f));
-                    }
-                }));
-                mainHandler.post(() -> status.setText("Checking the download…"));
-                error = Updater.verify(this, apk);
-                if (error == null) {
-                    Updater.install(this, apk);
-                }
-            } catch (java.io.IOException e) {
-                error = "Update failed: " + e.getMessage();
-            }
-            String problem = error;
-            mainHandler.post(() -> {
-                if (isDestroyed()) {
-                    return;
-                }
-                dialog.dismiss();
-                if (problem != null) {
-                    Toast.makeText(this, problem, Toast.LENGTH_LONG).show();
-                }
-            });
-        });
-    }
-
     // ---- Sync calibration --------------------------------------------------
 
-    @SuppressLint("ClickableViewAccessibility")
     private void openCalibration() {
         if (settings.source != WallpaperSettings.SOURCE_SYSTEM) {
             Toast.makeText(this, "Not needed in microphone mode: the mic hears the sound when you do.",
@@ -1126,111 +544,31 @@ public class MainActivity extends Activity {
             requestAudioPermission();
             return;
         }
-        boolean bluetooth = route.isBluetooth();
-        String output = bluetooth ? "Bluetooth" : "phone speaker / wired";
-
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(24), dp(8), dp(24), 0);
-        TextView text = new TextView(this);
-        text.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        text.setTextColor(getColor(R.color.text_primary));
-        text.setText("Measures the delay for " + output + ".\n\n"
-                + "Your music will pause and you'll hear " + BeatCalibration.TOTAL_CLICKS
-                + " clicks. Tap the big button exactly in time with each click you hear. "
-                + "The first " + BeatCalibration.WARMUP_CLICKS + " are practice.\n\n"
-                + "Turn the volume up so the clicks are easy to hear.");
-        box.addView(text);
-        TextView status = new TextView(this);
-        status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        status.setTextColor(getColor(R.color.accent));
-        status.setPadding(0, dp(12), 0, dp(12));
-        box.addView(status);
-        Button pad = new Button(this);
-        pad.setText("TAP");
-        pad.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
-        pad.setEnabled(false);
-        box.addView(pad, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(180)));
-
-        AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Calibrate sync")
-                .setView(box)
-                .setPositiveButton("Start", null)
-                .setNegativeButton("Cancel", null)
-                .create();
-        BeatCalibration[] session = new BeatCalibration[1];
-        int[] measured = {-1};
-
-        dialog.setOnShowListener(d -> {
-            Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            positive.setOnClickListener(v -> {
-                if (measured[0] >= 0) {
-                    if (bluetooth) {
-                        settings.syncBluetoothMs = measured[0];
-                    } else {
-                        settings.syncSpeakerMs = measured[0];
-                    }
-                    saveDraft();
-                    applyAudioSettings();
-                    buildControls();
-                    dialog.dismiss();
-                    return;
-                }
+        CalibrationDialog.show(this, route.isBluetooth(), new CalibrationDialog.Host() {
+            @Override
+            public void pauseAudio() {
                 // Free the shared audio capture while calibrating.
                 audio.stop();
                 demo.stop();
-                session[0] = new BeatCalibration(this, new BeatCalibration.Callback() {
-                    @Override
-                    public void onProgress(int clicksPlayed, int taps) {
-                        status.setText("Click " + clicksPlayed + " of " + BeatCalibration.TOTAL_CLICKS
-                                + "   ·   taps: " + taps);
-                    }
+            }
 
-                    @Override
-                    public void onFinished(BeatCalibration.Result result) {
-                        session[0] = null;
-                        restartAudio();
-                        pad.setEnabled(false);
-                        if (result.ok) {
-                            measured[0] = result.delayMs;
-                            status.setText("Measured delay: " + result.delayMs + " ms. " + result.message);
-                            positive.setText("Use " + result.delayMs + " ms");
-                        } else {
-                            status.setText(result.message);
-                            positive.setText("Try again");
-                        }
-                        positive.setEnabled(true);
-                    }
-                });
-                if (!session[0].start()) {
-                    session[0] = null;
-                    restartAudio();
-                    status.setText("Phone audio can't be captured on this device. Try microphone mode instead.");
-                    return;
-                }
-                positive.setEnabled(false);
-                pad.setEnabled(true);
-            });
-            // Time taps from the touch itself (not the click callback) for accuracy.
-            pad.setOnTouchListener((v, event) -> {
-                if (event.getActionMasked() == MotionEvent.ACTION_DOWN && session[0] != null) {
-                    session[0].tap(event.getEventTime());
-                    v.setPressed(true);
-                } else if (event.getActionMasked() == MotionEvent.ACTION_UP
-                        || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
-                    v.setPressed(false);
-                }
-                return true;
-            });
-        });
-        dialog.setOnDismissListener(d -> {
-            if (session[0] != null) {
-                session[0].cancel();
-                session[0] = null;
+            @Override
+            public void resumeAudio() {
                 restartAudio();
             }
+
+            @Override
+            public void onMeasured(boolean bluetooth, int delayMs) {
+                if (bluetooth) {
+                    settings.syncBluetoothMs = delayMs;
+                } else {
+                    settings.syncSpeakerMs = delayMs;
+                }
+                saveDraft();
+                applyAudioSettings();
+                buildControls();
+            }
         });
-        dialog.show();
     }
 
     private void restartAudio() {
@@ -1312,18 +650,7 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        if (requestCode == REQUEST_EXPORT) {
-            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-                finishExport(data.getData());
-            } else {
-                pendingExport = null;
-            }
-            return;
-        }
-        if (requestCode == REQUEST_IMPORT) {
-            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-                finishImport(data.getData());
-            }
+        if (looksUi.onActivityResult(requestCode, resultCode, data)) {
             return;
         }
         if (requestCode == REQUEST_PAINT && resultCode == RESULT_OK) {

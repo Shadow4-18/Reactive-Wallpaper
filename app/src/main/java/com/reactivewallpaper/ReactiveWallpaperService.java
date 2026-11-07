@@ -82,6 +82,8 @@ public class ReactiveWallpaperService extends WallpaperService {
         private final SharedPreferences.OnSharedPreferenceChangeListener presetsListener =
                 (prefs, key) -> refresh(false);
 
+        private boolean receiverRegistered;
+
         private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context c, Intent intent) {
@@ -120,6 +122,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             } else {
                 registerReceiver(screenReceiver, filter);
             }
+            receiverRegistered = true;
             loadRotation();
             lastRotation = SystemClock.uptimeMillis();
             locked = isLockedNow();
@@ -130,7 +133,15 @@ public class ReactiveWallpaperService extends WallpaperService {
             super.onDestroy();
             WallpaperSettings.prefs(context).unregisterOnSharedPreferenceChangeListener(this);
             PresetStore.unregisterListener(context, presetsListener);
-            unregisterReceiver(screenReceiver);
+            if (receiverRegistered) {
+                receiverRegistered = false;
+                try {
+                    unregisterReceiver(screenReceiver);
+                } catch (IllegalArgumentException e) {
+                    // Android can drop the service's receivers before an engine's onDestroy runs
+                    // (e.g. when leaving the wallpaper preview); it is already gone, which is fine.
+                }
+            }
             handler.removeCallbacksAndMessages(null);
             stopFrames();
             audio.stop();

@@ -1,7 +1,11 @@
 package com.reactivewallpaper;
 
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
@@ -10,6 +14,7 @@ import android.media.session.PlaybackState;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.widget.Toast;
 
 import java.util.List;
 import java.util.Objects;
@@ -144,5 +149,23 @@ final class AlbumArtSource {
         // The music app owns its bitmap and may recycle it; keep our own copy.
         Bitmap copy = art != null && !art.isRecycled() ? art.copy(Bitmap.Config.ARGB_8888, false) : null;
         listener.onTrack(key, copy);
+    }
+
+    /** Explains why notification access is needed and offers to open the settings screen. */
+    static void askForAccess(Activity activity) {
+        new AlertDialog.Builder(activity)
+                .setTitle("Allow access to what's playing")
+                .setMessage("To see the current song, Android needs Resona to have notification access. "
+                        + "On the next screen, turn on Resona. Resona only looks at what's playing and "
+                        + "never reads your notifications.")
+                .setPositiveButton("Open settings", (d, w) -> {
+                    try {
+                        activity.startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+                    } catch (ActivityNotFoundException e) {
+                        Toast.makeText(activity, "Couldn't open the settings screen.", Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("Not now", null)
+                .show();
     }
 }
