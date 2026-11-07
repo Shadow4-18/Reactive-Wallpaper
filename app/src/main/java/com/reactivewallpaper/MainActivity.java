@@ -350,6 +350,33 @@ public class MainActivity extends Activity {
                 s.tapEffect, v -> s.tapEffect = v);
         ui.hint(touch, "Touch empty space on your home screen. Tap the preview here to try it.");
 
+        LinearLayout moments = ui.section("Unlock & charging", false);
+        ui.label(moments, "When you unlock the phone");
+        ui.choiceColumn(moments, new String[] {"Nothing", "Fade up from dark", "Zoom in and bloom", "Wave of light"},
+                new int[] {WallpaperSettings.INTRO_OFF, WallpaperSettings.INTRO_FADE,
+                        WallpaperSettings.INTRO_ZOOM, WallpaperSettings.INTRO_WAVE},
+                s.unlockIntro, v -> {
+                    s.unlockIntro = v;
+                    renderer.playIntro(s);
+                });
+        Button previewIntro = new Button(this);
+        previewIntro.setText("Preview the unlock");
+        previewIntro.setOnClickListener(v -> renderer.playIntro(s));
+        moments.addView(previewIntro, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ui.toggle(moments, "Wave of light and battery level when charging starts",
+                () -> s.chargeEffect, v -> s.chargeEffect = v);
+        Button previewCharge = new Button(this);
+        previewCharge.setText("Preview charging");
+        previewCharge.setOnClickListener(v -> {
+            android.os.BatteryManager battery = (android.os.BatteryManager) getSystemService(BATTERY_SERVICE);
+            int percent = battery != null
+                    ? battery.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) : -1;
+            renderer.playCharge(percent >= 0 && percent <= 100 ? percent : -1);
+        });
+        moments.addView(previewCharge, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         LinearLayout viz = ui.section("Visualizer overlay", false);
         ui.choiceColumn(viz, new String[] {"None", "Bars", "Mirror bars", "LED meter (peaks hold and fall)",
                 "Circle", "Orb (ripples with the music)", "Wave", "Neon lines"},

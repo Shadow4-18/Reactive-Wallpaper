@@ -20,6 +20,11 @@ final class WallpaperSettings {
     static final int STYLE_BARS = 1;
     static final int STYLE_CIRCLE = 2;
     static final int STYLE_WAVE = 3;
+    static final int INTRO_OFF = 0;
+    static final int INTRO_FADE = 1;
+    static final int INTRO_ZOOM = 2;
+    static final int INTRO_WAVE = 3;
+
     static final int STYLE_MIRROR = 4;
     static final int STYLE_LED = 5;
     static final int STYLE_ORB = 6;
@@ -126,6 +131,10 @@ final class WallpaperSettings {
     float camPunch = 0f;
     /** Small alternating rotation on strong beats, 0 .. 2. */
     float camTilt = 0f;
+    /** What plays when the phone is unlocked (or the lock screen wakes). */
+    int unlockIntro = INTRO_ZOOM;
+    /** A wave of light and the battery level when a charger is plugged in. */
+    boolean chargeEffect = true;
     /** What touching the home screen does. */
     int tapEffect = TAP_OFF;
 
@@ -348,6 +357,8 @@ final class WallpaperSettings {
         s.camPunch = p.getFloat("camPunch", s.camPunch);
         s.camTilt = p.getFloat("camTilt", s.camTilt);
         s.tapEffect = p.getInt("tapEffect", s.tapEffect);
+        s.unlockIntro = p.getInt("unlockIntro", s.unlockIntro);
+        s.chargeEffect = p.getBoolean("chargeEffect", s.chargeEffect);
         s.fxRipple = p.getFloat("fxRipple", s.fxRipple);
         s.fxSplit = p.getFloat("fxSplit", s.fxSplit);
         s.fxGlitch = p.getFloat("fxGlitch", s.fxGlitch);
@@ -453,6 +464,8 @@ final class WallpaperSettings {
         w.putFloat("camPunch", camPunch);
         w.putFloat("camTilt", camTilt);
         w.putInt("tapEffect", tapEffect);
+        w.putInt("unlockIntro", unlockIntro);
+        w.putBoolean("chargeEffect", chargeEffect);
         w.putFloat("fxRipple", fxRipple);
         w.putFloat("fxSplit", fxSplit);
         w.putFloat("fxGlitch", fxGlitch);

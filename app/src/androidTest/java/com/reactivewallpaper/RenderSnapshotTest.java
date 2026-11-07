@@ -275,4 +275,50 @@ public class RenderSnapshotTest {
             s.circleSize = size;
         });
     }
+
+    @Test
+    public void unlockAndCharging() throws Exception {
+        Bitmap image = TestScenes.neon(1200, 2660);
+        String[] names = {"fade", "zoom", "wave"};
+        int[] kinds = {WallpaperSettings.INTRO_FADE, WallpaperSettings.INTRO_ZOOM, WallpaperSettings.INTRO_WAVE};
+        for (int i = 0; i < kinds.length; i++) {
+            int kind = kinds[i];
+            // About a third of the way in.
+            snapMoment("7" + i + "_unlock_" + names[i], image, 13, r -> {
+                WallpaperSettings s = new WallpaperSettings();
+                s.unlockIntro = kind;
+                r.playIntro(s);
+            });
+        }
+        snapMoment("73_charging", image, 25, r -> r.playCharge(57));
+    }
+
+    /** Plays a moment over a picture with music and catches it {@code framesIn} frames later. */
+    private void snapMoment(String name, Bitmap image, int framesIn, Consumer<WallpaperRenderer> start)
+            throws Exception {
+        WallpaperSettings s = new WallpaperSettings();
+        s.style = WallpaperSettings.STYLE_NONE;
+        now = 0;
+        AudioAnalyzer.clock = () -> now;
+        AudioAnalyzer analyzer = new AudioAnalyzer(s.barCount);
+        s.applyTo(analyzer, false, false);
+        WallpaperRenderer renderer = new WallpaperRenderer(DENSITY);
+        renderer.setImage(image.copy(Bitmap.Config.ARGB_8888, false), null);
+        Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Random random = new Random(11);
+        int startFrame = 40;
+        for (int f = 0; f < startFrame + framesIn; f++) {
+            now += 33;
+            analyzer.submit(TestScenes.music(now, random), 44100);
+            if (f == startFrame) {
+                start.accept(renderer);
+            }
+            analyzer.update(0.033f);
+            renderer.draw(canvas, W, H, analyzer, s, 0.033f);
+        }
+        TestScenes.saveShot(context, "render_" + name, out);
+        renderer.release();
+        out.recycle();
+    }
 }

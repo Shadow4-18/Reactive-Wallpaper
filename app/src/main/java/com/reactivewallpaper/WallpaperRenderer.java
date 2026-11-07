@@ -65,6 +65,8 @@ final class WallpaperRenderer {
     private final Paint auraPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final float[] point = new float[2];
     private VisualizerStyles styles;
+    /** Unlock intro and charging wave; created when first played. */
+    private MomentEffects moments;
     private WallpaperSettings paletteSettings;
     private final VisualizerStyles.Palette palette = position -> colorAt(paletteSettings, position);
     private int auraTint;
@@ -152,6 +154,29 @@ final class WallpaperRenderer {
             fx.release();
             fx = null;
         }
+        if (moments != null) {
+            moments.release();
+            moments = null;
+        }
+    }
+
+    /** Plays the unlock intro in the look's style (if it has one). */
+    void playIntro(WallpaperSettings s) {
+        if (s.unlockIntro != WallpaperSettings.INTRO_OFF) {
+            moments().startIntro(s.unlockIntro);
+        }
+    }
+
+    /** Plays the charger-connected wave, showing {@code percent} (or -1 for none). */
+    void playCharge(int percent) {
+        moments().startCharge(percent);
+    }
+
+    private MomentEffects moments() {
+        if (moments == null) {
+            moments = new MomentEffects(density);
+        }
+        return moments;
     }
 
     /** A touch on the home screen (or preview) at x, y; {@code moving} while dragging. */
@@ -176,6 +201,7 @@ final class WallpaperRenderer {
     /** True while something is still moving without music (a tap effect, a settling camera). */
     boolean isBusy() {
         return (taps != null && taps.isActive()) || (fx != null && fx.isActive())
+                || (moments != null && moments.isActive())
                 || Math.abs(camera.zoom()) > 0.0005f || Math.abs(camera.angle()) > 0.02f;
     }
 
@@ -244,6 +270,9 @@ final class WallpaperRenderer {
         float bass = audio.bass();
         float beat = audio.beat();
         camera.update(dt, beat, s.camPunch, s.camTilt);
+        if (moments != null) {
+            moments.advance(dt);
+        }
         updateParallax(w, h, s, dt);
         ColorMatrixColorFilter filter = hueFilter((s.hueShift + cyclePhase) % 360f);
         imagePaint.setColorFilter(s.recolorImage ? filter : null);
@@ -257,7 +286,8 @@ final class WallpaperRenderer {
                 living = new LivingImage(image, mask, accentHues, s.glowCoverage);
             }
             float flare = taps != null ? taps.flare() : 0f;
-            living.setExtraScale((framed ? 1f : ALBUM_ART_GLOW) * (1f + 6f * flare));
+            float moment = moments != null ? moments.glowBoost() : 0f;
+            living.setExtraScale((framed ? 1f : ALBUM_ART_GLOW) * (1f + 6f * flare + moment));
             // Particles sit "in front" of the picture, so they move further with parallax.
             living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,
                     filter, saving ? 0.5f : 1f, mediaFrame == null);
@@ -312,6 +342,9 @@ final class WallpaperRenderer {
             fillPaint.setColor(blend(Color.WHITE, colorAt(s, 0.5f), 0.5f));
             fillPaint.setAlpha((int) (255 * Math.min(0.6f, beat * 0.3f * s.flash)));
             canvas.drawRect(0, 0, w, h, fillPaint);
+        }
+        if (moments != null && moments.isActive()) {
+            moments.draw(canvas, w, h, colorAt(s, 0.25f), colorAt(s, 0.8f));
         }
     }
 
@@ -393,6 +426,9 @@ final class WallpaperRenderer {
             reach += 0.025f * s.tiltParallax + (paged ? 0.04f * s.swipeParallax : 0f);
         }
         zoom += camera.zoom();
+        if (moments != null) {
+            zoom += moments.zoom();
+        }
         float angle = camera.angle();
         if (s.shake > 0f) {
             float amount = 9f * density * s.shake * beat;

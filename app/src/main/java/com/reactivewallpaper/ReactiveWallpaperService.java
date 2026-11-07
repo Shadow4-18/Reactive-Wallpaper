@@ -83,13 +83,32 @@ public class ReactiveWallpaperService extends WallpaperService {
                 (prefs, key) -> refresh(false);
 
         private boolean receiverRegistered;
+        private long lastIntro = -10_000;
 
         private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context c, Intent intent) {
+                String action = intent.getAction();
+                if (Intent.ACTION_POWER_CONNECTED.equals(action)) {
+                    if (isVisible()) {
+                        currentSlot().playCharge(batteryPercent());
+                        wake();
+                    }
+                    return;
+                }
                 updateLocked();
                 // The keyguard state can settle a moment after the broadcast.
                 handler.postDelayed(ReactiveEngine.this::updateLocked, 300);
+                long now = SystemClock.uptimeMillis();
+                // The lock screen waking, then the unlock, should play one intro, not two.
+                boolean wakes = Intent.ACTION_SCREEN_ON.equals(action) && isVisible();
+                boolean unlocks = Intent.ACTION_USER_PRESENT.equals(action) && now - lastIntro > 2500;
+                if (wakes || unlocks) {
+                    lastIntro = now;
+                    // After an unlock the home look shows; on wake, whichever look is up.
+                    (unlocks ? home : currentSlot()).playIntro();
+                    wake();
+                }
             }
         };
 
@@ -118,6 +137,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             filter.addAction(Intent.ACTION_SCREEN_OFF);
             filter.addAction(Intent.ACTION_SCREEN_ON);
             filter.addAction(Intent.ACTION_USER_PRESENT);
+            filter.addAction(Intent.ACTION_POWER_CONNECTED);
             if (Build.VERSION.SDK_INT >= 33) {
                 // Only system broadcasts are wanted here; nothing else may send to this receiver.
                 registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
@@ -158,6 +178,21 @@ public class ReactiveWallpaperService extends WallpaperService {
                 art.recycle();
                 art = null;
             }
+        }
+
+        /** Makes sure frames are coming, so a moment that just started plays out. */
+        private void wake() {
+            asleep = false;
+            lastFrame = 0;
+            if (isVisible()) {
+                scheduleFrame(0);
+            }
+        }
+
+        private int batteryPercent() {
+            android.os.BatteryManager battery = (android.os.BatteryManager) getSystemService(Context.BATTERY_SERVICE);
+            int percent = battery != null ? battery.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) : -1;
+            return percent >= 0 && percent <= 100 ? percent : -1;
         }
 
         /** The look on screen right now: the lock look while locked, if there is one. */

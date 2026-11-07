@@ -118,6 +118,18 @@ final class LookSlot {
         }
     }
 
+    void playIntro() {
+        if (renderer != null) {
+            renderer.playIntro(settings);
+        }
+    }
+
+    void playCharge(int percent) {
+        if (renderer != null && settings.chargeEffect) {
+            renderer.playCharge(percent);
+        }
+    }
+
     /** True while a tap effect or camera move is still playing out. */
     boolean isBusy() {
         return renderer != null && renderer.isBusy();
