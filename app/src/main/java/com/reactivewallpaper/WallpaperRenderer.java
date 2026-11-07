@@ -64,6 +64,7 @@ final class WallpaperRenderer {
     private final Matrix auraMatrix = new Matrix();
     private final Paint auraPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final float[] point = new float[2];
+    private int auraTint;
     private float[] accentHues = DEFAULT_HUES;
     private float time;
     private float swayPhase;
@@ -328,7 +329,11 @@ final class WallpaperRenderer {
             float grow = 1.06f + 0.08f * bass;
             auraMatrix.postScale(grow, grow, point[0], point[1]);
             auraPaint.setXfermode(ADD);
-            auraPaint.setColor(colorAt(s, 0.5f));
+            int tint = colorAt(s, 0.5f);
+            if (tint != auraTint || auraPaint.getColorFilter() == null) {
+                auraTint = tint;
+                auraPaint.setColorFilter(new android.graphics.PorterDuffColorFilter(tint, PorterDuff.Mode.SRC_IN));
+            }
             auraPaint.setAlpha((int) (255 * Math.min(1f, s.subjectAura * (0.3f + 0.9f * bass))));
             canvas.drawBitmap(aura, auraMatrix, auraPaint);
         }

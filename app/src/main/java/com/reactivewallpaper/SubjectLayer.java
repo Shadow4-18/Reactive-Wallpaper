@@ -3,8 +3,6 @@ package com.reactivewallpaper;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
 
 /**
@@ -28,7 +26,7 @@ final class SubjectLayer {
 
     final Bitmap cutout;
     final Bitmap plate;
-    /** ALPHA_8: drawn with a paint color, so it can be tinted for free. */
+    /** White with the silhouette as alpha; tinted when drawn. */
     final Bitmap aura;
     /** The subject's center, as a fraction of the image (for scaling it about itself). */
     final float centerX;
@@ -73,12 +71,12 @@ final class SubjectLayer {
         // A one-pixel feather keeps the cut edge from looking jagged once scaled up.
         float[] edge = blur(m, mw, mh, 1, 1);
         Bitmap cutout = image.copy(Bitmap.Config.ARGB_8888, true);
-        applyAlpha(cutout, alphaBitmap(edge, mw, mh), PorterDuff.Mode.DST_IN);
+        multiplyAlpha(cutout, edge, mw, mh);
 
         // The plate: fill the subject (grown a little, to swallow its outline) with
         // the surrounding colors, spread inward by a normalized blur.
         float[] grown = blur(dilate(m, mw, mh, 4), mw, mh, 2, 2);
-        Bitmap plate = fillPlate(image, m, grown, mw, mh);
+        Bitmap plate = fillPlate(image, grown, mw, mh);
 
         float[] soft = blur(scale(m, mw, mh, AURA_SIDE), auraW(mw, mh), auraH(mw, mh), 3, 3);
         Bitmap aura = alphaBitmap(soft, auraW(mw, mh), auraH(mw, mh));
@@ -229,21 +227,43 @@ final class SubjectLayer {
         return out;
     }
 
+    /** White, with the grid as alpha. */
     private static Bitmap alphaBitmap(float[] m, int w, int h) {
-        byte[] bytes = new byte[w * h];
-        for (int i = 0; i < bytes.length; i++) {
-            bytes[i] = (byte) Math.round(Math.max(0f, Math.min(1f, m[i])) * 255f);
+        int[] px = new int[w * h];
+        for (int i = 0; i < px.length; i++) {
+            int a = Math.round(Math.max(0f, Math.min(1f, m[i])) * 255f);
+            px[i] = (a << 24) | 0xFFFFFF;
         }
-        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ALPHA_8);
-        b.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(bytes));
+        Bitmap b = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888);
+        b.setHasAlpha(true);
         return b;
     }
 
-    /** Stretches an alpha bitmap over {@code target} and combines it with {@code mode}. */
-    private static void applyAlpha(Bitmap target, Bitmap alpha, PorterDuff.Mode mode) {
-        Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
-        p.setXfermode(new PorterDuffXfermode(mode));
-        new Canvas(target).drawBitmap(alpha, null, new Rect(0, 0, target.getWidth(), target.getHeight()), p);
+    /**
+     * Multiplies {@code target}'s alpha by the grid, stretched smoothly over it.
+     * Done on the pixels directly: blend modes into a bitmap that started out
+     * opaque don't reliably make it transparent.
+     */
+    private static void multiplyAlpha(Bitmap target, float[] m, int w, int h) {
+        int tw = target.getWidth();
+        int th = target.getHeight();
+        Bitmap small = alphaBitmap(m, w, h);
+        Bitmap alpha = Bitmap.createScaledBitmap(small, tw, th, true);
+        if (alpha != small) {
+            small.recycle();
+        }
+        int[] row = new int[tw];
+        int[] arow = new int[tw];
+        target.setHasAlpha(true);
+        for (int y = 0; y < th; y++) {
+            target.getPixels(row, 0, tw, 0, y, tw, 1);
+            alpha.getPixels(arow, 0, tw, 0, y, tw, 1);
+            for (int x = 0; x < tw; x++) {
+                int a = ((row[x] >>> 24) * (arow[x] >>> 24) + 127) / 255;
+                row[x] = (a << 24) | (row[x] & 0xFFFFFF);
+            }
+            target.setPixels(row, 0, tw, 0, y, tw, 1);
+        }
         alpha.recycle();
     }
 
@@ -252,7 +272,7 @@ final class SubjectLayer {
      * around it: a blur of the background alone, divided by a blur of where
      * background is, at a few sizes so large holes fill too.
      */
-    private static Bitmap fillPlate(Bitmap image, float[] subject, float[] grown, int w, int h) {
+    private static Bitmap fillPlate(Bitmap image, float[] grown, int w, int h) {
         Bitmap small = Bitmap.createScaledBitmap(image, w, h, true);
         int[] px = new int[w * h];
         small.getPixels(px, 0, w, 0, 0, w, h);
@@ -303,7 +323,7 @@ final class SubjectLayer {
         Rect full = new Rect(0, 0, image.getWidth(), image.getHeight());
         c.drawBitmap(fillBitmap, null, full, new Paint(Paint.FILTER_BITMAP_FLAG));
         fillBitmap.recycle();
-        applyAlpha(masked, alphaBitmap(grown, w, h), PorterDuff.Mode.DST_IN);
+        multiplyAlpha(masked, grown, w, h);
         Bitmap plate = image.copy(Bitmap.Config.ARGB_8888, true);
         new Canvas(plate).drawBitmap(masked, 0, 0, null);
         masked.recycle();
