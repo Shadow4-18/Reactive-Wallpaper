@@ -63,7 +63,7 @@ public class AppSmokeTest {
     public void firstRunTourAndSimpleMode() throws Exception {
         editorPrefs().edit().putBoolean("tourShown", false).commit();
         Activity activity = start(MainActivity.class, null);
-        shot("08_first_run_tour", 2500);
+        shot("08_first_run_tour", 5000);
         instrumentation.getUiAutomation().performGlobalAction(
                 android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);
         activity.finish();

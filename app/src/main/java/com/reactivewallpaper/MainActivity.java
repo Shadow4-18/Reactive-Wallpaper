@@ -62,6 +62,7 @@ public class MainActivity extends Activity {
     private FrameLayout previewFrame;
     private PreviewView.FramingListener framing;
     private android.app.Dialog fullScreen;
+    private android.app.Dialog tourCard;
 
     // Undo history of the editor's settings (as saved JSON), newest last.
     private static final int MAX_HISTORY = 40;
@@ -644,6 +645,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        // Dialogs go with the screen, so their windows aren't leaked.
+        if (tourCard != null && tourCard.isShowing()) {
+            tourCard.dismiss();
+        }
+        if (fullScreen != null) {
+            fullScreen.dismiss();
+        }
         executor.shutdown();
         renderer.release();
     }
@@ -1327,7 +1335,7 @@ public class MainActivity extends Activity {
             afterTour();
             return;
         }
-        new android.app.AlertDialog.Builder(this)
+        tourCard = new android.app.AlertDialog.Builder(this)
                 .setTitle(cards[step][0])
                 .setMessage(cards[step][1])
                 .setPositiveButton(step == cards.length - 1 ? "Done" : "Next", (d, w) -> showTour(step + 1))

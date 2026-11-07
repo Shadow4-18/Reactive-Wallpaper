@@ -190,19 +190,22 @@ final class MomentEffects {
         if (level <= 0.01f) {
             return;
         }
-        float depth = Math.min(w, h) * 0.16f;
-        int edge = (color & 0x00FFFFFF) | ((int) (200 * level) << 24);
-        int clear = color & 0x00FFFFFF;
+        float depth = Math.min(w, h) * 0.13f;
+        int rgb = color & 0x00FFFFFF;
+        // Bright right at the edge, falling off quickly, so it reads as light, not a frame.
+        int[] colors = {rgb | ((int) (170 * level) << 24), rgb | ((int) (55 * level) << 24),
+                rgb | ((int) (12 * level) << 24), rgb};
+        float[] stops = {0f, 0.25f, 0.6f, 1f};
         paint.setStyle(Paint.Style.FILL);
         paint.setXfermode(ADD);
         paint.setAlpha(255);
-        paint.setShader(new LinearGradient(0, 0, 0, depth, edge, clear, Shader.TileMode.CLAMP));
+        paint.setShader(new LinearGradient(0, 0, 0, depth, colors, stops, Shader.TileMode.CLAMP));
         canvas.drawRect(0, 0, w, depth, paint);
-        paint.setShader(new LinearGradient(0, h, 0, h - depth, edge, clear, Shader.TileMode.CLAMP));
+        paint.setShader(new LinearGradient(0, h, 0, h - depth, colors, stops, Shader.TileMode.CLAMP));
         canvas.drawRect(0, h - depth, w, h, paint);
-        paint.setShader(new LinearGradient(0, 0, depth, 0, edge, clear, Shader.TileMode.CLAMP));
+        paint.setShader(new LinearGradient(0, 0, depth, 0, colors, stops, Shader.TileMode.CLAMP));
         canvas.drawRect(0, 0, depth, h, paint);
-        paint.setShader(new LinearGradient(w, 0, w - depth, 0, edge, clear, Shader.TileMode.CLAMP));
+        paint.setShader(new LinearGradient(w, 0, w - depth, 0, colors, stops, Shader.TileMode.CLAMP));
         canvas.drawRect(w - depth, 0, w, h, paint);
         paint.setShader(null);
         paint.setXfermode(null);
