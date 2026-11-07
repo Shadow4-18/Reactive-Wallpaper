@@ -295,6 +295,68 @@ final class WallpaperSettings {
         prefs(context).edit().putString(KEY_TIME_OF_DAY, String.join("\n", ids)).apply();
     }
 
+    private static final String KEY_TOD_MODE = "timeOfDayMode";
+    private static final String KEY_TOD_STARTS = "timeOfDayStarts";
+    private static final String KEY_TOD_LAT = "timeOfDayLat";
+    private static final String KEY_TOD_LON = "timeOfDayLon";
+
+    /** How the parts of the day start: {@link TimeOfDay#TIMES_FIXED}, custom or by the sun. */
+    static int timeOfDayMode(Context context) {
+        return prefs(context).getInt(KEY_TOD_MODE, TimeOfDay.TIMES_FIXED);
+    }
+
+    /** The user's own start times (minutes after midnight). */
+    static int[] customStarts(Context context) {
+        String[] parts = prefs(context).getString(KEY_TOD_STARTS, "").split(",");
+        int[] starts = TimeOfDay.FIXED.clone();
+        if (parts.length == 4) {
+            try {
+                for (int i = 0; i < 4; i++) {
+                    starts[i] = Math.max(0, Math.min(1439, Integer.parseInt(parts[i].trim())));
+                }
+            } catch (NumberFormatException e) {
+                return TimeOfDay.FIXED.clone();
+            }
+        }
+        return TimeOfDay.ordered(starts);
+    }
+
+    /** The saved approximate location for following the sun, or null. */
+    static double[] sunLocation(Context context) {
+        SharedPreferences p = prefs(context);
+        if (!p.contains(KEY_TOD_LAT)) {
+            return null;
+        }
+        return new double[] {p.getFloat(KEY_TOD_LAT, 0f), p.getFloat(KEY_TOD_LON, 0f)};
+    }
+
+    static void setTimeOfDayTimes(Context context, int mode, int[] custom, double[] location) {
+        SharedPreferences.Editor e = prefs(context).edit()
+                .putInt(KEY_TOD_MODE, mode)
+                .putString(KEY_TOD_STARTS, custom[0] + "," + custom[1] + "," + custom[2] + "," + custom[3]);
+        if (location != null) {
+            // Rounded to about a kilometer: plenty for sunrise times.
+            e.putFloat(KEY_TOD_LAT, Math.round(location[0] * 100) / 100f)
+                    .putFloat(KEY_TOD_LON, Math.round(location[1] * 100) / 100f);
+        }
+        e.apply();
+    }
+
+    /** Today's start times for the parts of the day, as chosen. */
+    static int[] timeOfDayStarts(Context context) {
+        int mode = timeOfDayMode(context);
+        if (mode == TimeOfDay.TIMES_CUSTOM) {
+            return customStarts(context);
+        }
+        double[] where = sunLocation(context);
+        if (mode == TimeOfDay.TIMES_SUN && where != null) {
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            int offset = java.util.TimeZone.getDefault().getOffset(now.getTimeInMillis()) / 60000;
+            return TimeOfDay.sunStarts(where[0], where[1], now.get(java.util.Calendar.DAY_OF_YEAR), offset);
+        }
+        return TimeOfDay.FIXED.clone();
+    }
+
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
     }

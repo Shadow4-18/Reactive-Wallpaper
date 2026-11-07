@@ -67,6 +67,8 @@ public class ReactiveWallpaperService extends WallpaperService {
         private long lastLockCheck;
         private String[] timeOfDayIds = {"", "", "", ""};
         private int timeOfDayPart;
+        private int[] timeOfDayStarts;
+        private int timeOfDayStartsDay = -1;
 
         // Look rotation.
         private List<String> rotationIds;
@@ -430,11 +432,20 @@ public class ReactiveWallpaperService extends WallpaperService {
         }
 
         private int currentPart() {
-            return TimeOfDay.part(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY));
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            int day = now.get(java.util.Calendar.DAY_OF_YEAR);
+            if (day != timeOfDayStartsDay || timeOfDayStarts == null) {
+                // Sunrise moves day to day; work the start times out once a day.
+                timeOfDayStarts = WallpaperSettings.timeOfDayStarts(context);
+                timeOfDayStartsDay = day;
+            }
+            int minute = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE);
+            return TimeOfDay.part(minute, timeOfDayStarts);
         }
 
         private void loadRotation() {
             timeOfDayIds = WallpaperSettings.timeOfDayIds(context);
+            timeOfDayStarts = null;
             timeOfDayPart = currentPart();
             rotationIds = WallpaperSettings.rotationIds(context);
             rotationMode = WallpaperSettings.rotationMode(context);

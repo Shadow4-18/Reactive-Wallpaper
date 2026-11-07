@@ -1250,6 +1250,9 @@ public class MainActivity extends Activity {
         if (requestCode == REQUEST_AUDIO) {
             updatePermissionNote();
             restartAudio();
+        } else if (requestCode == LooksUi.REQUEST_LOCATION) {
+            looksUi.onLocationPermission(grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED);
         }
     }
 

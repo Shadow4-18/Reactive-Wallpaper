@@ -190,9 +190,88 @@ final class LooksUi {
         box.setPadding(dp(24), dp(8), dp(24), 0);
         ui.hint(box, "The home screen switches looks through the day. Look rotation, when on, takes "
                 + "priority.");
+
+        // When each part starts.
+        int[] mode = {WallpaperSettings.timeOfDayMode(activity)};
+        int[] custom = WallpaperSettings.customStarts(activity);
+        double[][] where = {WallpaperSettings.sunLocation(activity)};
+        TextView[] partLabels = new TextView[4];
+        TextView timesNote = new TextView(activity);
+        timesNote.setTextColor(activity.getColor(R.color.text_secondary));
+        LinearLayout customRow = new LinearLayout(activity);
+        customRow.setOrientation(LinearLayout.VERTICAL);
+        Runnable showTimes = () -> {
+            int[] starts = startsFor(mode[0], custom, where[0]);
+            for (int i = 0; i < 4; i++) {
+                if (partLabels[i] != null) {
+                    partLabels[i].setText(TimeOfDay.NAMES[i] + " (from " + TimeOfDay.format(starts[i]) + ")");
+                }
+            }
+            customRow.setVisibility(mode[0] == TimeOfDay.TIMES_CUSTOM ? View.VISIBLE : View.GONE);
+            if (mode[0] == TimeOfDay.TIMES_SUN) {
+                timesNote.setText(where[0] == null ? "Finding your approximate location…"
+                        : "Morning starts at sunrise, evening an hour before sunset, night an hour after "
+                        + "(for your approximate location, updated daily).");
+                timesNote.setVisibility(View.VISIBLE);
+            } else {
+                timesNote.setVisibility(View.GONE);
+            }
+        };
+        ui.label(box, "Parts of the day start");
+        RadioGroup timeModes = new RadioGroup(activity);
+        String[] timeNames = {"6 am, noon, 6 pm and 10 pm", "My own times", "Follow sunrise and sunset"};
+        for (int i = 0; i < timeNames.length; i++) {
+            RadioButton b = new RadioButton(activity);
+            b.setId(View.generateViewId());
+            b.setText(timeNames[i]);
+            b.setTextColor(activity.getColor(R.color.text_primary));
+            b.setChecked(i == mode[0]);
+            int value = i;
+            b.setOnClickListener(v -> {
+                mode[0] = value;
+                if (value == TimeOfDay.TIMES_SUN && where[0] == null) {
+                    locate(location -> {
+                        where[0] = location;
+                        if (location == null) {
+                            timesNote.setText("Couldn't get your location, so the fixed times are used. "
+                                    + "Allow location for Resona, or choose your own times.");
+                        } else {
+                            showTimes.run();
+                        }
+                    });
+                }
+                showTimes.run();
+            });
+            timeModes.addView(b);
+        }
+        box.addView(timeModes);
+        for (int i = 0; i < 4; i++) {
+            int index = i;
+            Button time = new Button(activity, null, android.R.attr.borderlessButtonStyle);
+            time.setTextColor(activity.getColor(R.color.accent));
+            Runnable timeLabel = () -> time.setText(TimeOfDay.NAMES[index] + " starts at "
+                    + TimeOfDay.format(custom[index]));
+            timeLabel.run();
+            time.setOnClickListener(v -> new android.app.TimePickerDialog(activity, (picker, h, m) -> {
+                custom[index] = h * 60 + m;
+                int[] fixed = TimeOfDay.ordered(custom);
+                System.arraycopy(fixed, 0, custom, 0, 4);
+                timeLabel.run();
+                showTimes.run();
+            }, custom[index] / 60, custom[index] % 60, android.text.format.DateFormat.is24HourFormat(activity)).show());
+            customRow.addView(time);
+        }
+        box.addView(customRow);
+        box.addView(timesNote);
+
         for (int part = 0; part < 4; part++) {
             int index = part;
-            ui.label(box, TimeOfDay.NAMES[part]);
+            TextView partLabel = new TextView(activity);
+            partLabel.setTextColor(activity.getColor(R.color.text_primary));
+            partLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 15);
+            partLabel.setPadding(0, dp(10), 0, 0);
+            partLabels[part] = partLabel;
+            box.addView(partLabel);
             Button pick = new Button(activity);
             Runnable label = () -> {
                 PresetStore.Preset p = PresetStore.find(activity, ids[index]);
@@ -218,12 +297,14 @@ final class LooksUi {
             box.addView(pick, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
+        showTimes.run();
         android.widget.ScrollView scroll = new android.widget.ScrollView(activity);
         scroll.addView(box);
         new AlertDialog.Builder(activity)
                 .setTitle("Looks by time of day")
                 .setView(scroll)
                 .setPositiveButton("Save", (d, which) -> {
+                    WallpaperSettings.setTimeOfDayTimes(activity, mode[0], custom, where[0]);
                     WallpaperSettings.setTimeOfDay(activity, ids);
                     refresh();
                 })
@@ -343,6 +424,80 @@ final class LooksUi {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private static int[] startsFor(int mode, int[] custom, double[] where) {
+        if (mode == TimeOfDay.TIMES_CUSTOM) {
+            return TimeOfDay.ordered(custom);
+        }
+        if (mode == TimeOfDay.TIMES_SUN && where != null) {
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            int offset = java.util.TimeZone.getDefault().getOffset(now.getTimeInMillis()) / 60000;
+            return TimeOfDay.sunStarts(where[0], where[1], now.get(java.util.Calendar.DAY_OF_YEAR), offset);
+        }
+        return TimeOfDay.FIXED.clone();
+    }
+
+    static final int REQUEST_LOCATION = 10;
+    private java.util.function.Consumer<double[]> pendingLocation;
+
+    /**
+     * The phone's approximate location (city-level is plenty for sunrise), asking
+     * for permission first if needed; null if it can't be had.
+     */
+    private void locate(java.util.function.Consumer<double[]> then) {
+        if (activity.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pendingLocation = then;
+            activity.requestPermissions(new String[] {android.Manifest.permission.ACCESS_COARSE_LOCATION},
+                    REQUEST_LOCATION);
+            return;
+        }
+        android.location.LocationManager lm =
+                (android.location.LocationManager) activity.getSystemService(android.content.Context.LOCATION_SERVICE);
+        android.location.Location best = null;
+        if (lm != null) {
+            for (String provider : lm.getProviders(true)) {
+                try {
+                    android.location.Location l = lm.getLastKnownLocation(provider);
+                    if (l != null && (best == null || l.getTime() > best.getTime())) {
+                        best = l;
+                    }
+                } catch (SecurityException ignored) {
+                    // Not allowed for this provider; try the others.
+                }
+            }
+        }
+        if (best != null) {
+            then.accept(new double[] {best.getLatitude(), best.getLongitude()});
+            return;
+        }
+        if (lm != null && android.os.Build.VERSION.SDK_INT >= 30
+                && lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER)) {
+            try {
+                lm.getCurrentLocation(android.location.LocationManager.NETWORK_PROVIDER, null,
+                        activity.getMainExecutor(), l -> then.accept(l == null ? null
+                                : new double[] {l.getLatitude(), l.getLongitude()}));
+                return;
+            } catch (SecurityException ignored) {
+                // Fall through.
+            }
+        }
+        then.accept(null);
+    }
+
+    /** Forwarded from the activity: the answer to the location permission request. */
+    void onLocationPermission(boolean granted) {
+        java.util.function.Consumer<double[]> then = pendingLocation;
+        pendingLocation = null;
+        if (then == null) {
+            return;
+        }
+        if (granted) {
+            locate(then);
+        } else {
+            then.accept(null);
+        }
     }
 
     private void chooseLockLook() {
