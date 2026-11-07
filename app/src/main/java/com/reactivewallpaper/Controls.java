@@ -101,8 +101,11 @@ final class Controls {
                 context.getResources().getDisplayMetrics()));
     }
 
-    /** A collapsible section; returns the container its controls go in. */
-    LinearLayout section(String title, boolean expanded) {
+    /**
+     * A collapsible section; returns the container its controls go in. Every
+     * section starts collapsed, so the editor opens as a tidy list.
+     */
+    LinearLayout section(String title) {
         TextView header = new TextView(context);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         header.setTypeface(Typeface.DEFAULT_BOLD);
@@ -124,7 +127,7 @@ final class Controls {
 
         Runnable refresh = () -> header.setText((body.getVisibility() == View.VISIBLE ? "▾  " : "▸  ") + title);
         // Remember open/closed sections across rebuilds (e.g. after applying a look).
-        boolean open = expandedSections.getOrDefault(title, expanded);
+        boolean open = expandedSections.getOrDefault(title, false);
         body.setVisibility(open ? View.VISIBLE : View.GONE);
         refresh.run();
         header.setOnClickListener(v -> {

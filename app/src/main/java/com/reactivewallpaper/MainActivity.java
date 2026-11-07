@@ -14,10 +14,12 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -56,6 +58,10 @@ public class MainActivity extends Activity {
     };
     private boolean demoOn;
     private PreviewView preview;
+    /** Holds the preview and its full-screen button; sized to the screen's shape. */
+    private FrameLayout previewFrame;
+    private PreviewView.FramingListener framing;
+    private android.app.Dialog fullScreen;
     private TextView permissionNote;
     private Button setWallpaper;
     private View applyStatus;
@@ -96,7 +102,7 @@ public class MainActivity extends Activity {
         preview.bind(renderer, analyzer, settings);
         tilt = new TiltSensor(this);
         preview.setTiltSensor(tilt);
-        preview.setFramingListener(new PreviewView.FramingListener() {
+        framing = new PreviewView.FramingListener() {
             @Override
             public void onMove(float dx, float dy) {
                 settings.imagePanX = Controls.clamp(settings.imagePanX + dx, -0.5f, 0.5f);
@@ -122,7 +128,9 @@ public class MainActivity extends Activity {
                 // Move the zoom and position sliders to match.
                 buildControls();
             }
-        });
+        };
+        preview.setFramingListener(framing);
+        addFullScreenButton();
         artSource = new AlbumArtSource(this, (key, cover) -> {
             if (art != null) {
                 art.recycle();
@@ -186,10 +194,10 @@ public class MainActivity extends Activity {
         WallpaperSettings s = settings;
         updates.addBanner(controls);
 
-        LinearLayout looks = ui.section("Looks", true);
+        LinearLayout looks = ui.section("Looks");
         looksUi.build(ui, looks);
 
-        LinearLayout fit = ui.section("Image fit", true);
+        LinearLayout fit = ui.section("Image fit");
         ui.choiceColumn(fit, new String[] {"Fill (crop to fill the screen)", "Fit (show the whole image)",
                         "Stretch", "Fit width", "Fit height"},
                 new int[] {WallpaperSettings.FIT_FILL, WallpaperSettings.FIT_FIT, WallpaperSettings.FIT_STRETCH,
@@ -208,7 +216,7 @@ public class MainActivity extends Activity {
                 () -> s.hideEdges, v -> s.hideEdges = v);
         ui.hint(fit, "Tip: drag the preview to move the image, pinch to zoom, double-tap to reset.");
 
-        LinearLayout glow = ui.section("Glow (the image's own colors)", true);
+        LinearLayout glow = ui.section("Glow (the image's own colors)");
         ui.slider(glow, "Bass glow", 0f, 3f, () -> s.bassGlow, v -> s.bassGlow = v, Controls::percent);
         ui.slider(glow, "Treble glow", 0f, 3f, () -> s.highGlow, v -> s.highGlow = v, Controls::percent);
         ui.slider(glow, "Beat flare", 0f, 3f, () -> s.beatFlare, v -> s.beatFlare = v, Controls::percent);
@@ -236,7 +244,7 @@ public class MainActivity extends Activity {
         ui.toggle(glow, "Swap which color follows the bass",
                 () -> s.swapGlowColors, v -> s.swapGlowColors = v);
 
-        LinearLayout subject = ui.section("Subject in front", false);
+        LinearLayout subject = ui.section("Subject in front");
         ui.hint(subject, "Mark the picture's subject (a person, a character) and it's drawn in front of the "
                 + "glow, particles and visualizer, with its own depth.");
         Button markSubject = new Button(this);
@@ -262,7 +270,7 @@ public class MainActivity extends Activity {
         ui.slider(subject, "Light behind the subject", 0f, 1f,
                 () -> s.subjectAura, v -> s.subjectAura = v, Controls::percent);
 
-        LinearLayout albumArt = ui.section("Album art", false);
+        LinearLayout albumArt = ui.section("Album art");
         ui.toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
             s.albumArt = v;
             if (v && !AlbumArtSource.hasAccess(this)) {
@@ -280,7 +288,7 @@ public class MainActivity extends Activity {
         ui.hint(albumArt, "Uses your image whenever nothing is playing. Needs notification access, which "
                 + "Android requires to see what's playing; Resona never reads your notifications.");
 
-        LinearLayout recolor = ui.section("Recolor", false);
+        LinearLayout recolor = ui.section("Recolor");
         ui.slider(recolor, "Hue shift", 0f, 360f, () -> s.hueShift, v -> s.hueShift = v,
                 v -> Math.round(v) == 0 || Math.round(v) == 360 ? "Off" : "+" + Math.round(v) + "°");
         ui.slider(recolor, "Color cycle (keeps shifting)", 0f, 1f, () -> s.colorCycle, v -> s.colorCycle = v,
@@ -288,13 +296,13 @@ public class MainActivity extends Activity {
         ui.toggle(recolor, "Recolor the whole image, not just the glow",
                 () -> s.recolorImage, v -> s.recolorImage = v);
 
-        LinearLayout idle = ui.section("Idle animation (moves without sound)", true);
+        LinearLayout idle = ui.section("Idle animation (moves without sound)");
         ui.slider(idle, "Breathing glow", 0f, 2f, () -> s.breathe, v -> s.breathe = v, Controls::percent);
         ui.slider(idle, "Breathing speed", 0.25f, 3f, () -> s.breatheSpeed, v -> s.breatheSpeed = v, Controls::speed);
         ui.slider(idle, "Sway", 0f, 2f, () -> s.sway, v -> s.sway = v, Controls::percent);
         ui.slider(idle, "Sway speed", 0.25f, 3f, () -> s.swaySpeed, v -> s.swaySpeed = v, Controls::speed);
 
-        LinearLayout sparkles = ui.section("Particles", false);
+        LinearLayout sparkles = ui.section("Particles");
         ui.choiceColumn(sparkles, new String[] {"Sparkles (on the glowing spots)", "Embers (rising)",
                         "Falling stars", "Bubbles", "Light streaks"},
                 new int[] {WallpaperSettings.PARTICLE_SPARKLES, WallpaperSettings.PARTICLE_EMBERS,
@@ -311,7 +319,7 @@ public class MainActivity extends Activity {
         ui.slider(sparkles, "Music reaction", 0f, 2f, () -> s.sparkleReact, v -> s.sparkleReact = v,
                 Controls::percent);
 
-        LinearLayout depth = ui.section("Parallax (3D depth)", false);
+        LinearLayout depth = ui.section("Parallax (3D depth)");
         ui.slider(depth, "Tilt the phone", 0f, 2f, () -> s.tiltParallax, v -> {
             s.tiltParallax = v;
             if (v > 0f && resumed) {
@@ -321,14 +329,14 @@ public class MainActivity extends Activity {
         ui.slider(depth, "Home-screen swipe", 0f, 2f, () -> s.swipeParallax, v -> s.swipeParallax = v,
                 Controls::percent);
 
-        LinearLayout beat = ui.section("Beat effects", false);
+        LinearLayout beat = ui.section("Beat effects");
         ui.slider(beat, "Pulse (zoom with the bass)", 0f, 2f, () -> s.pulse, v -> s.pulse = v, Controls::percent);
         ui.slider(beat, "Flash", 0f, 2f, () -> s.flash, v -> s.flash = v, Controls::percent);
         ui.slider(beat, "Shake", 0f, 2f, () -> s.shake, v -> s.shake = v, Controls::percent);
         ui.slider(beat, "Camera punch (zoom kick)", 0f, 2f, () -> s.camPunch, v -> s.camPunch = v, Controls::percent);
         ui.slider(beat, "Camera tilt (alternating)", 0f, 2f, () -> s.camTilt, v -> s.camTilt = v, Controls::percent);
 
-        LinearLayout effects = ui.section("Shader effects", false);
+        LinearLayout effects = ui.section("Shader effects");
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             ui.slider(effects, "Bass ripples", 0f, 2f, () -> s.fxRipple, v -> s.fxRipple = v, Controls::percent);
             ui.slider(effects, "Color split on beats", 0f, 2f, () -> s.fxSplit, v -> s.fxSplit = v, Controls::percent);
@@ -342,7 +350,7 @@ public class MainActivity extends Activity {
             ui.hint(effects, "Shader effects need Android 13 or newer.");
         }
 
-        LinearLayout touch = ui.section("Touch", false);
+        LinearLayout touch = ui.section("Touch");
         ui.choiceColumn(touch, new String[] {"Off", "Ripple of light", "Burst of sparks (drag for a trail)",
                         "Glow flare"},
                 new int[] {WallpaperSettings.TAP_OFF, WallpaperSettings.TAP_RIPPLE, WallpaperSettings.TAP_BURST,
@@ -350,7 +358,7 @@ public class MainActivity extends Activity {
                 s.tapEffect, v -> s.tapEffect = v);
         ui.hint(touch, "Touch empty space on your home screen. Tap the preview here to try it.");
 
-        LinearLayout moments = ui.section("Unlock & charging", false);
+        LinearLayout moments = ui.section("Unlock & charging");
         ui.label(moments, "When you unlock the phone");
         ui.choiceColumn(moments, new String[] {"Nothing", "Fade up from dark", "Zoom in and bloom", "Wave of light"},
                 new int[] {WallpaperSettings.INTRO_OFF, WallpaperSettings.INTRO_FADE,
@@ -377,7 +385,7 @@ public class MainActivity extends Activity {
         moments.addView(previewCharge, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        LinearLayout viz = ui.section("Visualizer overlay", false);
+        LinearLayout viz = ui.section("Visualizer overlay");
         ui.choiceColumn(viz, new String[] {"None", "Bars", "Mirror bars", "LED meter (peaks hold and fall)",
                 "Circle", "Orb (ripples with the music)", "Wave", "Neon lines"},
                 new int[] {WallpaperSettings.STYLE_NONE, WallpaperSettings.STYLE_BARS,
@@ -388,6 +396,9 @@ public class MainActivity extends Activity {
                     s.style = v;
                     updateVisibility();
                 });
+        ui.toggle(viz, "In front of the subject", () -> s.vizFront, v -> s.vizFront = v);
+        ui.hint(viz, "When a subject is marked (Subject in front), the visualizer goes behind it unless this "
+                + "is on.");
         ui.slider(viz, "Height", 0f, 2f, () -> s.vizHeight, v -> s.vizHeight = v, Controls::percent);
         ui.slider(viz, "Opacity", 0f, 1f, () -> s.vizOpacity, v -> s.vizOpacity = v, Controls::percent);
         ui.slider(viz, "Bar count", WallpaperSettings.MIN_BARS, WallpaperSettings.MAX_BARS,
@@ -419,7 +430,7 @@ public class MainActivity extends Activity {
         ui.slider(hue, "Hue", 0f, 360f, () -> s.hue, v -> s.hue = v, v -> Math.round(v) + "°");
         hueOption = hue;
 
-        LinearLayout sound = ui.section("Audio", false);
+        LinearLayout sound = ui.section("Audio");
         ui.slider(sound, "Sensitivity", 0.25f, 3f, () -> s.sensitivity, v -> {
             s.sensitivity = v;
             applyAudioSettings();
@@ -477,7 +488,7 @@ public class MainActivity extends Activity {
             restartAudio();
         });
 
-        LinearLayout widget = ui.section("Home screen media buttons", false);
+        LinearLayout widget = ui.section("Home screen media buttons");
         ui.label(widget, "A widget with previous, play/pause and next that can be faint or completely "
                 + "invisible, so your screen shows only the wallpaper.");
         Button addWidget = new Button(this);
@@ -490,7 +501,7 @@ public class MainActivity extends Activity {
         ui.hint(widget, "Outlines the buttons on every Resona widget until you turn this off. "
                 + "Long-press a widget (Android 12+) to change how visible it is.");
 
-        LinearLayout battery = ui.section("Battery", false);
+        LinearLayout battery = ui.section("Battery");
         ui.label(battery, "Battery saver: lower frame rate and half the particles");
         ui.choice(battery, new String[] {"Off", "Auto", "Always"},
                 new int[] {WallpaperSettings.SAVER_OFF, WallpaperSettings.SAVER_AUTO, WallpaperSettings.SAVER_ALWAYS},
@@ -499,7 +510,7 @@ public class MainActivity extends Activity {
         ui.slider(battery, "Sleep after silence", 0f, 30f, () -> s.sleepMinutes, v -> s.sleepMinutes = Math.round(v),
                 v -> Math.round(v) == 0 ? "Never" : Math.round(v) + " min");
 
-        LinearLayout about = ui.section("About & updates", false);
+        LinearLayout about = ui.section("About & updates");
         ui.label(about, "Resona " + Updater.installedVersion(this));
         Button check = new Button(this);
         check.setText("Check for updates");
@@ -561,6 +572,9 @@ public class MainActivity extends Activity {
         super.onPause();
         resumed = false;
         mainHandler.removeCallbacks(tempoTicker);
+        if (fullScreen != null) {
+            fullScreen.dismiss();
+        }
         preview.setRunning(false);
         audio.stop();
         demo.stop();
@@ -700,10 +714,129 @@ public class MainActivity extends Activity {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         int screenW = Math.min(dm.widthPixels, dm.heightPixels);
         int screenH = Math.max(dm.widthPixels, dm.heightPixels);
-        ViewGroup.LayoutParams lp = preview.getLayoutParams();
+        ViewGroup.LayoutParams lp = previewFrame.getLayoutParams();
         lp.height = (int) (dm.heightPixels * 0.38f);
         lp.width = (int) (lp.height * screenW / (float) screenH);
-        preview.setLayoutParams(lp);
+        previewFrame.setLayoutParams(lp);
+    }
+
+    /** Puts the preview in a frame with a small full-screen button in its corner. */
+    private void addFullScreenButton() {
+        ViewGroup parent = (ViewGroup) preview.getParent();
+        int index = parent.indexOfChild(preview);
+        ViewGroup.LayoutParams lp = preview.getLayoutParams();
+        parent.removeView(preview);
+        previewFrame = new FrameLayout(this);
+        // Let the preview's shadow show outside the frame.
+        previewFrame.setClipChildren(false);
+        previewFrame.setClipToPadding(false);
+        previewFrame.addView(preview, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        TextView expand = roundButton("⤢", "Full screen preview");
+        expand.setOnClickListener(v -> openFullScreenPreview());
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.TOP | Gravity.END);
+        blp.setMargins(0, dp(6), dp(6), 0);
+        // Above the preview's elevation, so it isn't drawn underneath it.
+        expand.setElevation(preview.getElevation() + dp(2));
+        previewFrame.addView(expand, blp);
+        parent.addView(previewFrame, index, lp);
+    }
+
+    private TextView roundButton(String symbol, String description) {
+        TextView b = new TextView(this);
+        b.setText(symbol);
+        b.setContentDescription(description);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        b.setTextColor(0xFFFFFFFF);
+        b.setGravity(Gravity.CENTER);
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        bg.setColor(0x99000000);
+        b.setBackground(bg);
+        b.setClickable(true);
+        b.setFocusable(true);
+        return b;
+    }
+
+    /**
+     * Shows the preview over the whole screen, as the wallpaper will look, with
+     * the system bars hidden. Taps, drags and pinches work as in the small one.
+     */
+    private void openFullScreenPreview() {
+        if (fullScreen != null) {
+            return;
+        }
+        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        FrameLayout box = new FrameLayout(this);
+        box.setBackgroundColor(0xFF000000);
+        PreviewView full = new PreviewView(this, null);
+        // Square corners: it fills the screen like the wallpaper does.
+        full.setClipToOutline(false);
+        full.bind(renderer, analyzer, settings);
+        full.setTiltSensor(tilt);
+        full.setFramingListener(framing);
+        box.addView(full, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        TextView close = roundButton("✕", "Close full screen preview");
+        close.setOnClickListener(v -> dialog.dismiss());
+        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.TOP | Gravity.END);
+        clp.setMargins(0, dp(28), dp(16), 0);
+        box.addView(close, clp);
+        TextView tip = new TextView(this);
+        tip.setText("Tap to try touch effects. Drag or pinch to frame the picture.");
+        tip.setTextColor(0xFFFFFFFF);
+        tip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        tip.setGravity(Gravity.CENTER);
+        tip.setPadding(dp(16), dp(10), dp(16), dp(10));
+        android.graphics.drawable.GradientDrawable tipBg = new android.graphics.drawable.GradientDrawable();
+        tipBg.setCornerRadius(dp(18));
+        tipBg.setColor(0x99000000);
+        tip.setBackground(tipBg);
+        FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        tlp.bottomMargin = dp(48);
+        box.addView(tip, tlp);
+        tip.animate().alpha(0f).setStartDelay(3000).setDuration(600).start();
+        dialog.setContentView(box);
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                window.getAttributes().layoutInDisplayCutoutMode =
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            }
+        }
+        dialog.setOnDismissListener(d -> {
+            full.setRunning(false);
+            fullScreen = null;
+            preview.setSettings(settings);
+            preview.setRunning(resumed);
+        });
+        // Only one view drives the shared renderer at a time.
+        preview.setRunning(false);
+        fullScreen = dialog;
+        dialog.show();
+        if (window != null) {
+            hideSystemBars(window);
+        }
+        full.setRunning(true);
+    }
+
+    @SuppressWarnings("deprecation")
+    private static void hideSystemBars(android.view.Window window) {
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false);
+            android.view.WindowInsetsController controller = window.getInsetsController();
+            if (controller != null) {
+                controller.hide(android.view.WindowInsets.Type.systemBars());
+                controller.setSystemBarsBehavior(
+                        android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        }
     }
 
     private void loadPreviewImage() {

@@ -299,6 +299,32 @@ final class WallpaperRenderer {
             taps.draw(canvas, dt, density);
         }
 
+        boolean subject = subjectShown(s);
+        if (subject && s.vizFront) {
+            // The visualizer can sit in front of the subject instead of behind it.
+            drawSubject(canvas, s, bass);
+            drawVisualizer(canvas, w, h, audio, s, bass, dt);
+        } else {
+            drawVisualizer(canvas, w, h, audio, s, bass, dt);
+            if (subject) {
+                drawSubject(canvas, s, bass);
+            }
+        }
+
+        // The flash lights everything, the subject included.
+        if (s.flash > 0f && beat > 0.01f) {
+            fillPaint.setShader(null);
+            fillPaint.setColor(blend(Color.WHITE, colorAt(s, 0.5f), 0.5f));
+            fillPaint.setAlpha((int) (255 * Math.min(0.6f, beat * 0.3f * s.flash)));
+            canvas.drawRect(0, 0, w, h, fillPaint);
+        }
+        if (moments != null && moments.isActive()) {
+            moments.draw(canvas, w, h, colorAt(s, 0.25f), colorAt(s, 0.8f));
+        }
+    }
+
+    private void drawVisualizer(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s,
+                                float bass, float dt) {
         switch (s.style) {
             case WallpaperSettings.STYLE_BARS:
                 drawBars(canvas, w, h, audio.bands(), s);
@@ -330,21 +356,6 @@ final class WallpaperRenderer {
                 break;
             default:
                 break;
-        }
-
-        if (subjectShown(s)) {
-            drawSubject(canvas, s, bass);
-        }
-
-        // The flash lights everything, the subject included.
-        if (s.flash > 0f && beat > 0.01f) {
-            fillPaint.setShader(null);
-            fillPaint.setColor(blend(Color.WHITE, colorAt(s, 0.5f), 0.5f));
-            fillPaint.setAlpha((int) (255 * Math.min(0.6f, beat * 0.3f * s.flash)));
-            canvas.drawRect(0, 0, w, h, fillPaint);
-        }
-        if (moments != null && moments.isActive()) {
-            moments.draw(canvas, w, h, colorAt(s, 0.25f), colorAt(s, 0.8f));
         }
     }
 

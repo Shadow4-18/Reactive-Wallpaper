@@ -75,6 +75,19 @@ public class AppSmokeTest {
             ((ScrollView) controls.getParent()).fullScroll(View.FOCUS_DOWN);
         });
         shot("02_editor_bottom", 1500);
+        // The full-screen preview, from the button in the preview's corner.
+        instrumentation.runOnMainSync(() -> {
+            java.util.ArrayList<View> found = new java.util.ArrayList<>();
+            activity.getWindow().getDecorView().findViewsWithText(found, "Full screen preview",
+                    View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION);
+            if (found.isEmpty()) {
+                throw new AssertionError("no full-screen button");
+            }
+            found.get(0).performClick();
+        });
+        shot("06_full_screen_preview", 2500);
+        instrumentation.getUiAutomation().performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);
+        shot("07_after_full_screen", 1500);
         activity.finish();
     }
 

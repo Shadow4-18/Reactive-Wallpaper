@@ -234,6 +234,7 @@ public class RenderSnapshotTest {
             });
             tiltX = 0f;
             snap("62_subject_off", image, true, s -> s.subjectFront = false);
+            snap("67_subject_viz_in_front", image, true, s -> s.vizFront = true);
             snap("63_subject_ring", image, true, s -> {
                 s.style = WallpaperSettings.STYLE_CIRCLE;
                 s.circleY = 0.58f;

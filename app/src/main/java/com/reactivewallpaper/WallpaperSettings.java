@@ -152,6 +152,8 @@ final class WallpaperSettings {
     float subjectDepth = 0.4f;
     /** A light glowing behind the subject with the bass, 0 .. 1. */
     float subjectAura = 0.5f;
+    /** Draw the visualizer in front of the subject instead of behind it. */
+    boolean vizFront = false;
 
     // Visualizer overlay.
     int style = STYLE_BARS;
@@ -368,6 +370,7 @@ final class WallpaperSettings {
         s.subjectFront = p.getBoolean("subjectFront", s.subjectFront);
         s.subjectDepth = p.getFloat("subjectDepth", s.subjectDepth);
         s.subjectAura = p.getFloat("subjectAura", s.subjectAura);
+        s.vizFront = p.getBoolean("vizFront", s.vizFront);
 
         s.style = p.getInt("style", s.style);
         s.vizHeight = p.getFloat("vizHeight", p.getFloat("intensity", s.vizHeight));
@@ -475,6 +478,7 @@ final class WallpaperSettings {
         w.putBoolean("subjectFront", subjectFront);
         w.putFloat("subjectDepth", subjectDepth);
         w.putFloat("subjectAura", subjectAura);
+        w.putBoolean("vizFront", vizFront);
         w.putInt("style", style);
         w.putFloat("vizHeight", vizHeight);
         w.putFloat("vizOpacity", vizOpacity);
