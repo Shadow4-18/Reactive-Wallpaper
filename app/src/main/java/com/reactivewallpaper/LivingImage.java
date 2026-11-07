@@ -80,8 +80,8 @@ final class LivingImage {
             candidates[0] = n + 1;
         });
         int candidateCount = candidates[0];
-        // Neon art is ~10% glowing and keeps full strength; a bright photo (~60%) gets ~a quarter.
-        glowScale = Math.max(0.25f, Math.min(1f, 0.15f / Math.max(0.15f, meanWeight)));
+        // Neon art is ~10% glowing and keeps full strength; a bright photo (~60%) gets a fifth.
+        glowScale = Math.max(0.2f, Math.min(1f, 0.12f / Math.max(0.12f, meanWeight)));
         particles = new ParticleSystem(tmpU, tmpV, tmpColor, Math.min(candidateCount, MAX_SPAWN_POINTS), hues);
 
         int[][] groups = {groupA, groupB};
@@ -190,6 +190,13 @@ final class LivingImage {
             if (weight < 0.02f) {
                 continue;
             }
+            // Glow is added on top, so on pixels that are already near white it can only
+            // clip; fade it there (saturated neon keeps it) and let the halo carry the light.
+            float luma = (0.2126f * Color.red(c) + 0.7152f * Color.green(c) + 0.0722f * Color.blue(c)) / 255f;
+            float headroom = 1f - 0.8f * clamp((luma - 0.6f) / 0.4f, 0f, 1f);
+            r *= headroom;
+            g *= headroom;
+            b *= headroom;
 
             float toA;
             if (hsv[1] < 0.25f) {
