@@ -32,46 +32,80 @@ final class SubjectDetector {
 
     private SubjectDetector() {}
 
-    static void detect(Bitmap image, Callback callback) {
+    private static final String PREFS = "subject_detector";
+    private static final String KEY_RUNNING = "running";
+    private static final String KEY_SINGLE_ONLY = "singleOnly";
+
+    static void detect(android.content.Context context, Bitmap image, Callback callback) {
         Handler main = new Handler(Looper.getMainLooper());
+        android.content.SharedPreferences prefs = context.getApplicationContext()
+                .getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE);
+        // If the last detection never came back, the app died inside the detector itself
+        // (beyond what any catch can stop): from then on, don't ask for separate subjects.
+        if (prefs.getBoolean(KEY_RUNNING, false)) {
+            Log.w(TAG, "The last detection never finished; using single-subject detection");
+            prefs.edit().putBoolean(KEY_SINGLE_ONLY, true).commit();
+        }
+        boolean multiple = !prefs.getBoolean(KEY_SINGLE_ONLY, false);
+        prefs.edit().putBoolean(KEY_RUNNING, true).commit();
+        Callback inner = callback;
+        callback = (mask, error) -> {
+            prefs.edit().putBoolean(KEY_RUNNING, false).apply();
+            inner.done(mask, error);
+        };
+        Callback done = callback;
         try {
             float scale = Math.min(1f, MAX_SIDE / (float) Math.max(image.getWidth(), image.getHeight()));
             Bitmap input = scale < 1f
                     ? Bitmap.createScaledBitmap(image, Math.max(1, Math.round(image.getWidth() * scale)),
                             Math.max(1, Math.round(image.getHeight() * scale)), true)
                     : image.copy(Bitmap.Config.ARGB_8888, false);
-            SubjectSegmenter segmenter = SubjectSegmentation.getClient(new SubjectSegmenterOptions.Builder()
-                    .enableForegroundConfidenceMask()
-                    .enableMultipleSubjects(new SubjectSegmenterOptions.SubjectResultOptions.Builder()
-                            .enableConfidenceMask()
-                            .build())
-                    .build());
+            SubjectSegmenterOptions.Builder options = new SubjectSegmenterOptions.Builder()
+                    .enableForegroundConfidenceMask();
+            if (multiple) {
+                options.enableMultipleSubjects(new SubjectSegmenterOptions.SubjectResultOptions.Builder()
+                        .enableConfidenceMask()
+                        .build());
+            }
+            SubjectSegmenter segmenter = SubjectSegmentation.getClient(options.build());
             segmenter.process(InputImage.fromBitmap(input, 0))
                     .addOnSuccessListener(result -> {
-                        // Separate subjects when there are several; else the whole foreground.
-                        Bitmap mask = subjectsMask(result.getSubjects(), input.getWidth(), input.getHeight());
-                        if (mask == null) {
-                            FloatBuffer confidence = result.getForegroundConfidenceMask();
-                            mask = confidence != null ? toMask(confidence, input.getWidth(), input.getHeight()) : null;
+                        int w = input.getWidth();
+                        int h = input.getHeight();
+                        Bitmap mask = null;
+                        // Separate subjects when there are several; if that part fails for any
+                        // reason, the whole foreground as one subject (as before).
+                        try {
+                            mask = multiple ? subjectsMask(result.getSubjects(), w, h) : null;
+                        } catch (Throwable t) {
+                            Log.w(TAG, "Separate subjects unavailable", t);
+                        }
+                        try {
+                            if (mask == null) {
+                                FloatBuffer confidence = result.getForegroundConfidenceMask();
+                                mask = confidence != null ? toMask(confidence, w, h) : null;
+                            }
+                        } catch (Throwable t) {
+                            Log.w(TAG, "Reading the subject failed", t);
                         }
                         input.recycle();
                         close(segmenter);
                         if (mask == null) {
-                            callback.done(null, "No subject was found. Paint it by hand instead.");
+                            done.done(null, "No subject was found. Paint it by hand instead.");
                         } else {
-                            callback.done(mask, null);
+                            done.done(mask, null);
                         }
                     })
                     .addOnFailureListener(e -> {
                         Log.w(TAG, "Subject detection failed", e);
                         input.recycle();
                         close(segmenter);
-                        callback.done(null, explain(e));
+                        done.done(null, explain(e));
                     });
         } catch (Throwable t) {
             // No Play services, or an old one: say so instead of crashing the editor.
             Log.w(TAG, "Subject detection unavailable", t);
-            main.post(() -> callback.done(null,
+            main.post(() -> done.done(null,
                     "Automatic detection isn't available on this phone. Paint the subject by hand."));
         }
     }

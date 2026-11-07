@@ -286,7 +286,7 @@ public class GlowPaintActivity extends Activity {
         }
         detecting = true;
         status.setText("Looking for the subject…");
-        SubjectDetector.detect(paintView.image, (found, error) -> {
+        SubjectDetector.detect(this, paintView.image, (found, error) -> {
             detecting = false;
             if (isDestroyed()) {
                 if (found != null) {
@@ -298,7 +298,16 @@ public class GlowPaintActivity extends Activity {
                 status.setText(error);
                 return;
             }
-            paintView.replaceMask(found);
+            try {
+                paintView.replaceMask(found);
+            } catch (RuntimeException e) {
+                // Never lose the editor over a detection result; report it instead.
+                android.util.Log.e("GlowPaintActivity", "Couldn't use the detected subject", e);
+                Diagnostics.recordProblem(this, e);
+                status.setText("Couldn't use what was found. Paint the subject by hand instead.");
+                found.recycle();
+                return;
+            }
             found.recycle();
             status.setText("Found it. Several people or objects each get their own layer (Subject 1-3), "
                     + "which move with their own depth. Touch up with Subject and Erase if needed.");

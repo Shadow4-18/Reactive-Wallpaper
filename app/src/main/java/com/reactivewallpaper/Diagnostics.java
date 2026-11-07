@@ -59,6 +59,15 @@ final class Diagnostics {
         });
     }
 
+    /** Keeps a problem that was caught (so nothing crashed) with the crash reports, for diagnostics. */
+    static void recordProblem(Context context, Throwable error) {
+        try {
+            saveCrash(context.getApplicationContext(), Thread.currentThread(), error);
+        } catch (Throwable ignored) {
+            // Reporting must never cause trouble of its own.
+        }
+    }
+
     private static void saveCrash(Context context, Thread thread, Throwable error) throws IOException {
         File dir = dir(context);
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(new Date());

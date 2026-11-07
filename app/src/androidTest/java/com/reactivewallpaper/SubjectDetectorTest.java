@@ -34,7 +34,7 @@ public class SubjectDetectorTest {
         String[] outcome = new String[1];
         Bitmap[] found = new Bitmap[1];
         long start = System.currentTimeMillis();
-        new Handler(Looper.getMainLooper()).post(() -> SubjectDetector.detect(image, (mask, error) -> {
+        new Handler(Looper.getMainLooper()).post(() -> SubjectDetector.detect(context, image, (mask, error) -> {
             found[0] = mask;
             outcome[0] = mask != null ? "found a subject, mask " + mask.getWidth() + "x" + mask.getHeight()
                     : "no mask: " + error;
