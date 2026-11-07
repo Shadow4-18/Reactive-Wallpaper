@@ -110,6 +110,8 @@ public class ReactiveWallpaperService extends WallpaperService {
             artSource = new AlbumArtSource(context, this::onTrack);
             // Home-screen page changes arrive through onOffsetsChanged.
             setOffsetNotificationsEnabled(true);
+            // Touches on empty home-screen space, for tap effects.
+            setTouchEventsEnabled(true);
             WallpaperSettings.prefs(context).registerOnSharedPreferenceChangeListener(this);
             PresetStore.registerListener(context, presetsListener);
             IntentFilter filter = new IntentFilter();
@@ -235,6 +237,18 @@ public class ReactiveWallpaperService extends WallpaperService {
             home.setSwipe(position, pages);
             if (lock != null) {
                 lock.setSwipe(position, pages);
+            }
+        }
+
+        @Override
+        public void onTouchEvent(android.view.MotionEvent event) {
+            int action = event.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_DOWN || action == android.view.MotionEvent.ACTION_MOVE) {
+                currentSlot().touch(event.getX(), event.getY(), action == android.view.MotionEvent.ACTION_MOVE);
+                if (visible) {
+                    asleep = false;
+                    scheduleFrame(0);
+                }
             }
         }
 
@@ -487,7 +501,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             }
 
             long delay = saving ? SAVER_FRAME_MS : 0;
-            if (idle && !slot.isFading()) {
+            if (idle && !slot.isFading() && !slot.isBusy()) {
                 boolean moving = s.mediaType != WallpaperSettings.MEDIA_IMAGE && !(s.albumArt && art != null);
                 boolean animated = moving || s.breathe > 0f || s.sparkleAmount > 0f || s.sway > 0f
                         || s.colorCycle > 0f || s.tiltParallax > 0f;

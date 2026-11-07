@@ -123,6 +123,52 @@ public class RenderSnapshotTest {
     }
 
     @Test
+    public void cameraAndTouch() throws Exception {
+        Bitmap image = TestScenes.neon(1200, 2660);
+        snap("40_camera_punch_tilt", image, true, s -> {
+            s.style = WallpaperSettings.STYLE_NONE;
+            s.camPunch = 2f;
+            s.camTilt = 2f;
+        });
+        // Taps land partway through, so each effect is caught mid-flight.
+        String[] names = {"ripple", "burst", "flare"};
+        int[] kinds = {WallpaperSettings.TAP_RIPPLE, WallpaperSettings.TAP_BURST, WallpaperSettings.TAP_FLARE};
+        for (int i = 0; i < kinds.length; i++) {
+            int kind = kinds[i];
+            snapWithTap("4" + (i + 1) + "_tap_" + names[i], image, kind);
+        }
+    }
+
+    private void snapWithTap(String name, Bitmap image, int kind) throws Exception {
+        WallpaperSettings s = new WallpaperSettings();
+        s.style = WallpaperSettings.STYLE_NONE;
+        s.tapEffect = kind;
+        now = 0;
+        AudioAnalyzer.clock = () -> now;
+        AudioAnalyzer analyzer = new AudioAnalyzer(s.barCount);
+        s.applyTo(analyzer, false, false);
+        WallpaperRenderer renderer = new WallpaperRenderer(DENSITY);
+        renderer.setImage(image.copy(Bitmap.Config.ARGB_8888, false), null);
+        Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        for (int f = 0; f < 40; f++) {
+            now += 33;
+            if (f == 30) {
+                renderer.touch(W * 0.5f, H * 0.35f, false, s);
+            }
+            if (kind == WallpaperSettings.TAP_BURST && f > 30 && f < 36) {
+                // A short drag, for the spark trail.
+                renderer.touch(W * (0.5f + 0.05f * (f - 30)), H * (0.35f + 0.02f * (f - 30)), true, s);
+            }
+            analyzer.update(0.033f);
+            renderer.draw(canvas, W, H, analyzer, s, 0.033f);
+        }
+        TestScenes.saveShot(context, "render_" + name, out);
+        renderer.release();
+        out.recycle();
+    }
+
+    @Test
     public void albumArtAndPaintedGlow() throws Exception {
         Bitmap art = AlbumArt.compose(TestScenes.cover(800), W, H, WallpaperSettings.ART_CARD);
         snap("30_album_art_card", art, null, false, true, s -> { });

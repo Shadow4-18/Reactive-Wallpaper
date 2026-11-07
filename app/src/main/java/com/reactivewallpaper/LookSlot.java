@@ -111,6 +111,17 @@ final class LookSlot {
         }
     }
 
+    void touch(float x, float y, boolean moving) {
+        if (renderer != null) {
+            renderer.touch(x, y, moving, settings);
+        }
+    }
+
+    /** True while a tap effect or camera move is still playing out. */
+    boolean isBusy() {
+        return renderer != null && renderer.isBusy();
+    }
+
     void setSaving(boolean saving) {
         if (renderer != null) {
             renderer.setSaving(saving);

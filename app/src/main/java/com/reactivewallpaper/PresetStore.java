@@ -495,6 +495,9 @@ final class PresetStore {
         club.sparkleReact = 1.8f;
         club.smoothing = 0.15f;
         club.colorMode = WallpaperSettings.COLOR_RAINBOW;
+        club.camPunch = 1f;
+        club.camTilt = 0.7f;
+        club.tapEffect = WallpaperSettings.TAP_BURST;
         list.add(builtIn("club", "Club", club));
 
         WallpaperSettings calm = new WallpaperSettings();

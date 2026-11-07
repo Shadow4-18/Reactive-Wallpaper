@@ -76,6 +76,15 @@ public final class PreviewView extends View {
             }
 
             @Override
+            public boolean onSingleTapConfirmed(MotionEvent e) {
+                // Try the tap effect in the preview, as on the home screen.
+                if (renderer != null && settings != null) {
+                    renderer.touch(e.getX(), e.getY(), false, settings);
+                }
+                return true;
+            }
+
+            @Override
             public boolean onDoubleTap(MotionEvent e) {
                 if (framingListener != null) {
                     framingListener.onReset();

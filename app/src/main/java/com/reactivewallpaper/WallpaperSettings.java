@@ -57,6 +57,11 @@ final class WallpaperSettings {
     static final int ROTATE_SONG = 2;
     static final int ROTATE_DOUBLE_TAP = 3;
 
+    static final int TAP_OFF = 0;
+    static final int TAP_RIPPLE = 1;
+    static final int TAP_BURST = 2;
+    static final int TAP_FLARE = 3;
+
     static final int SAVER_OFF = 0;
     static final int SAVER_AUTO = 1;
     static final int SAVER_ALWAYS = 2;
@@ -108,6 +113,12 @@ final class WallpaperSettings {
     float swaySpeed = 1f;
     float shake = 0f;
     float flash = 0.5f;
+    /** Zoom kick on strong beats, 0 .. 2. */
+    float camPunch = 0f;
+    /** Small alternating rotation on strong beats, 0 .. 2. */
+    float camTilt = 0f;
+    /** What touching the home screen does. */
+    int tapEffect = TAP_OFF;
 
     // Visualizer overlay.
     int style = STYLE_BARS;
@@ -306,6 +317,9 @@ final class WallpaperSettings {
         s.swaySpeed = p.getFloat("swaySpeed", s.swaySpeed);
         s.shake = p.getFloat("shakeAmount", p.getBoolean("shake", false) ? 1f : 0f);
         s.flash = p.getFloat("flashAmount", p.getBoolean("flash", true) ? s.flash : 0f);
+        s.camPunch = p.getFloat("camPunch", s.camPunch);
+        s.camTilt = p.getFloat("camTilt", s.camTilt);
+        s.tapEffect = p.getInt("tapEffect", s.tapEffect);
 
         s.style = p.getInt("style", s.style);
         s.vizHeight = p.getFloat("vizHeight", p.getFloat("intensity", s.vizHeight));
@@ -397,6 +411,9 @@ final class WallpaperSettings {
         w.putFloat("swaySpeed", swaySpeed);
         w.putFloat("shakeAmount", shake);
         w.putFloat("flashAmount", flash);
+        w.putFloat("camPunch", camPunch);
+        w.putFloat("camTilt", camTilt);
+        w.putInt("tapEffect", tapEffect);
         w.putInt("style", style);
         w.putFloat("vizHeight", vizHeight);
         w.putFloat("vizOpacity", vizOpacity);

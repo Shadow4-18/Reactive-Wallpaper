@@ -289,6 +289,16 @@ public class MainActivity extends Activity {
         ui.slider(beat, "Pulse (zoom with the bass)", 0f, 2f, () -> s.pulse, v -> s.pulse = v, Controls::percent);
         ui.slider(beat, "Flash", 0f, 2f, () -> s.flash, v -> s.flash = v, Controls::percent);
         ui.slider(beat, "Shake", 0f, 2f, () -> s.shake, v -> s.shake = v, Controls::percent);
+        ui.slider(beat, "Camera punch (zoom kick)", 0f, 2f, () -> s.camPunch, v -> s.camPunch = v, Controls::percent);
+        ui.slider(beat, "Camera tilt (alternating)", 0f, 2f, () -> s.camTilt, v -> s.camTilt = v, Controls::percent);
+
+        LinearLayout touch = ui.section("Touch", false);
+        ui.choiceColumn(touch, new String[] {"Off", "Ripple of light", "Burst of sparks (drag for a trail)",
+                        "Glow flare"},
+                new int[] {WallpaperSettings.TAP_OFF, WallpaperSettings.TAP_RIPPLE, WallpaperSettings.TAP_BURST,
+                        WallpaperSettings.TAP_FLARE},
+                s.tapEffect, v -> s.tapEffect = v);
+        ui.hint(touch, "Touch empty space on your home screen. Tap the preview here to try it.");
 
         LinearLayout viz = ui.section("Visualizer overlay", false);
         ui.choice(viz, new String[] {"None", "Bars", "Circle", "Wave"},

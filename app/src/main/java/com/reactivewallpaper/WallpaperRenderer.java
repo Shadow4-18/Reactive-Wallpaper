@@ -44,6 +44,8 @@ final class WallpaperRenderer {
     private boolean framed = true;
     /** True once the launcher reports more than one home-screen page. */
     private boolean paged;
+    private final CameraRig camera = new CameraRig();
+    private TapEffects taps;
     private MediaBackground media;
     private Bitmap mediaFrame;
     private final Matrix mediaMatrix = new Matrix();
@@ -117,6 +119,28 @@ final class WallpaperRenderer {
     void release() {
         setImage(null, null);
         setMedia(null);
+        if (taps != null) {
+            taps.release();
+            taps = null;
+        }
+    }
+
+    /** A touch on the home screen (or preview) at x, y; {@code moving} while dragging. */
+    void touch(float x, float y, boolean moving, WallpaperSettings s) {
+        if (s.tapEffect == WallpaperSettings.TAP_OFF) {
+            return;
+        }
+        if (taps == null) {
+            taps = new TapEffects();
+        }
+        int[] colors = {colorAt(s, 0f), colorAt(s, 0.5f), colorAt(s, 1f)};
+        taps.touch(s.tapEffect, x, y, moving, colors, density);
+    }
+
+    /** True while something is still moving without music (a tap effect, a settling camera). */
+    boolean isBusy() {
+        return (taps != null && taps.isActive())
+                || Math.abs(camera.zoom()) > 0.0005f || Math.abs(camera.angle()) > 0.02f;
     }
 
     /**
@@ -168,6 +192,7 @@ final class WallpaperRenderer {
         cyclePhase = (cyclePhase + dt * s.colorCycle * 30f) % 360f;
         float bass = audio.bass();
         float beat = audio.beat();
+        camera.update(dt, beat, s.camPunch, s.camTilt);
         updateParallax(w, h, s, dt);
         ColorMatrixColorFilter filter = hueFilter((s.hueShift + cyclePhase) % 360f);
         imagePaint.setColorFilter(s.recolorImage ? filter : null);
@@ -180,13 +205,17 @@ final class WallpaperRenderer {
                 living.release();
                 living = new LivingImage(image, mask, accentHues, s.glowCoverage);
             }
-            living.setExtraScale(framed ? 1f : ALBUM_ART_GLOW);
+            float flare = taps != null ? taps.flare() : 0f;
+            living.setExtraScale((framed ? 1f : ALBUM_ART_GLOW) * (1f + 2.5f * flare));
             // Particles sit "in front" of the picture, so they move further with parallax.
             living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,
                     filter, saving ? 0.5f : 1f, mediaFrame == null);
         }
         if (mediaFrame != null) {
             drawMediaGlow(canvas, w, h, audio, s, dt);
+        }
+        if (taps != null) {
+            taps.draw(canvas, dt, density);
         }
 
         if (s.flash > 0f && beat > 0.01f) {
@@ -237,6 +266,8 @@ final class WallpaperRenderer {
             dy += parallaxY;
             reach += 0.025f * s.tiltParallax + (paged ? 0.04f * s.swipeParallax : 0f);
         }
+        zoom += camera.zoom();
+        float angle = camera.angle();
         if (s.shake > 0f) {
             float amount = 9f * density * s.shake * beat;
             dx += (float) Math.sin(time * 61f) * amount;
@@ -286,6 +317,12 @@ final class WallpaperRenderer {
                 && Math.abs(panX) <= (bw * sx - w) / 2f + 1 && Math.abs(panY) <= (bh * sy - h) / 2f + 1;
         if (covers && (!framed || s.hideEdges)) {
             zoom += 2f * reach;
+            if (angle != 0f) {
+                // Turning a tall rectangle exposes its corners; grow just enough to cover them.
+                double rad = Math.toRadians(Math.abs(angle));
+                float aspect = Math.max(w, h) / (float) Math.max(1, Math.min(w, h));
+                zoom += (float) (Math.cos(rad) + Math.sin(rad) * aspect) - 1f;
+            }
         }
 
         drawBackdrop(canvas, w, h, s, covers);
@@ -294,6 +331,9 @@ final class WallpaperRenderer {
         // Zoom around the ring when there is one, so artwork under it stays lined up.
         float pivotY = s.style == WallpaperSettings.STYLE_CIRCLE ? h * s.circleY : h / 2f;
         matrix.postScale(zoom, zoom, w / 2f, pivotY);
+        if (angle != 0f) {
+            matrix.postRotate(angle, w / 2f, pivotY);
+        }
         if (mediaFrame != null) {
             updateMediaMatrix();
             canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
