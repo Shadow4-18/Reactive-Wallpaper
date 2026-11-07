@@ -114,8 +114,9 @@ final class ShaderEffects {
             + "    } else {\n"
             + "        c = content.eval(q);\n"
             + "    }\n"
+            // A rare slice with its color channels swapped: neon-shifted, still dark where it was dark.
             + "    if (invert > 0.0) {\n"
-            + "        c.rgb = half3(1.0) - c.rgb;\n"
+            + "        c.rgb = c.brg;\n"
             + "    }\n"
             + "    if (grain > 0.0) {\n"
             + "        float n = hash(p + fract(time) * 100.0) - 0.5;\n"
