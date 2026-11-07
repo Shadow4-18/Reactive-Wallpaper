@@ -30,6 +30,7 @@ final class VisualizerStyles {
     // Neon lines drift sideways slowly so they never look frozen.
     private float drift;
     private float orbSpin;
+    private float[] orbShape = new float[0];
 
     VisualizerStyles(float density) {
         this.density = density;
@@ -135,17 +136,35 @@ final class VisualizerStyles {
         float cy = h * s.circleY;
         float radius = Math.min(w, h) * s.circleSize * (0.85f + 0.18f * bass * s.vizHeight);
         int points = 96;
-        path.reset();
-        for (int i = 0; i <= points; i++) {
+        if (orbShape.length != points) {
+            orbShape = new float[points];
+        }
+        // Mirror the spectrum around the circle, then smooth it around the loop
+        // so the outline ripples instead of jagging where neighboring bands differ.
+        for (int i = 0; i < points; i++) {
             float t = i / (float) points;
-            // Mirror around the circle and sample bands smoothly.
             float pos = t < 0.5f ? t * 2f : (1f - t) * 2f;
             float fi = pos * (n - 1);
             int a = (int) fi;
             int b = Math.min(n - 1, a + 1);
-            float value = bands[a] + (bands[b] - bands[a]) * (fi - a);
+            orbShape[i] = bands[a] + (bands[b] - bands[a]) * (fi - a);
+        }
+        for (int pass = 0; pass < 3; pass++) {
+            float first = orbShape[0];
+            float previous = orbShape[points - 1];
+            for (int i = 0; i < points; i++) {
+                float next = i + 1 < points ? orbShape[i + 1] : first;
+                float current = orbShape[i];
+                orbShape[i] = 0.25f * previous + 0.5f * current + 0.25f * next;
+                previous = current;
+            }
+        }
+        path.reset();
+        for (int i = 0; i <= points; i++) {
+            float t = i / (float) points;
+            float value = orbShape[i % points];
             double angle = t * 2 * Math.PI + orbSpin - Math.PI / 2;
-            float r = radius * (1f + 0.32f * value * s.vizHeight);
+            float r = radius * (1f + 0.24f * value * s.vizHeight);
             float x = cx + (float) Math.cos(angle) * r;
             float y = cy + (float) Math.sin(angle) * r;
             if (i == 0) {
