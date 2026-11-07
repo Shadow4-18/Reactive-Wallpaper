@@ -27,6 +27,11 @@ final class LivingImage {
     private final int imageWidth;
     private final int imageHeight;
     private final float coverage;
+    /**
+     * Below 1 for bright pictures: when much of the image already counts as
+     * glowing (daylight photos, bright album covers), full glow would wash it out.
+     */
+    private final float glowScale;
 
     private final Random random = new Random();
     private final ParticleSystem particles;
@@ -64,7 +69,7 @@ final class LivingImage {
         int[] tmpColor = new int[MAX_SPAWN_POINTS];
         int[] candidates = {0};
         // Reservoir-sample the candidate points so they cover the whole image evenly.
-        computeGlow(pixels, maskPixels, hues, coverage, groupA, groupB, (i, c) -> {
+        float meanWeight = computeGlow(pixels, maskPixels, hues, coverage, groupA, groupB, (i, c) -> {
             int n = candidates[0];
             int slot = n < MAX_SPAWN_POINTS ? n : random.nextInt(n + 1);
             if (slot < MAX_SPAWN_POINTS) {
@@ -75,6 +80,8 @@ final class LivingImage {
             candidates[0] = n + 1;
         });
         int candidateCount = candidates[0];
+        // Neon art is ~10% glowing and keeps full strength; a bright photo (~60%) gets ~a quarter.
+        glowScale = Math.max(0.25f, Math.min(1f, 0.15f / Math.max(0.15f, meanWeight)));
         particles = new ParticleSystem(tmpU, tmpV, tmpColor, Math.min(candidateCount, MAX_SPAWN_POINTS), hues);
 
         int[][] groups = {groupA, groupB};
@@ -140,8 +147,10 @@ final class LivingImage {
      * groups. A painted mask can force glow on (in the pixel's own hue, even if
      * it is dim) or off.
      */
-    private static void computeGlow(int[] pixels, int[] mask, float[] hues, float coverage,
-                                    int[] groupA, int[] groupB, SpawnSink spawns) {
+    /** @return how strongly the image glows on average (0..1), before painting */
+    private static float computeGlow(int[] pixels, int[] mask, float[] hues, float coverage,
+                                     int[] groupA, int[] groupB, SpawnSink spawns) {
+        double weightSum = 0;
         float lowEdge = 0.7f - 0.55f * coverage;
         float saturationFloor = 0.15f + 0.35f * coverage;
         float[] hsv = new float[3];
@@ -150,6 +159,9 @@ final class LivingImage {
             toHsv(c, hsv);
             float weight = smoothstep(lowEdge, lowEdge + 0.45f, hsv[2])
                     * (saturationFloor + (1f - saturationFloor) * hsv[1]);
+            if (weight >= 0.02f) {
+                weightSum += weight;
+            }
             float r = Color.red(c) * weight;
             float g = Color.green(c) * weight;
             float b = Color.blue(c) * weight;
@@ -194,6 +206,7 @@ final class LivingImage {
                 spawns.add(i, c);
             }
         }
+        return pixels.length > 0 ? (float) (weightSum / pixels.length) : 0f;
     }
 
     void release() {
@@ -225,8 +238,8 @@ final class LivingImage {
 
         float idleA = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 1.1f));
         float idleB = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 0.9f + 2.1f));
-        float bassAmount = idleA + s.bassGlow * bass * 1.3f + s.beatFlare * beat;
-        float highAmount = idleB + s.highGlow * high * 1.6f + s.beatFlare * beat * 0.35f;
+        float bassAmount = (idleA + s.bassGlow * bass * 1.3f + s.beatFlare * beat) * glowScale;
+        float highAmount = (idleB + s.highGlow * high * 1.6f + s.beatFlare * beat * 0.35f) * glowScale;
         int bassGroup = s.swapGlowColors ? 1 : 0;
         if (drawGlow) {
             drawGroup(canvas, imageMatrix, bassGroup, bassAmount, s.bloom);

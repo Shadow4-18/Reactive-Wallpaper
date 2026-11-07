@@ -11,7 +11,6 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Outline;
-import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -33,7 +32,6 @@ import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SeekBar;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -51,7 +49,6 @@ public class MainActivity extends Activity {
     private static final int REQUEST_EXPORT = 4;
     private static final int REQUEST_IMPORT = 5;
     private static final int REQUEST_DIAGNOSTICS = 6;
-    private static final int SEEK_STEPS = 1000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -70,6 +67,7 @@ public class MainActivity extends Activity {
     private Button setWallpaper;
     private View applyStatus;
     private LinearLayout controls;
+    private Controls ui;
     private View circleOptions;
     private View hueOption;
     private LinearLayout looksRow;
@@ -112,14 +110,14 @@ public class MainActivity extends Activity {
         preview.setFramingListener(new PreviewView.FramingListener() {
             @Override
             public void onMove(float dx, float dy) {
-                settings.imagePanX = clamp(settings.imagePanX + dx, -0.5f, 0.5f);
-                settings.imagePanY = clamp(settings.imagePanY + dy, -0.5f, 0.5f);
+                settings.imagePanX = Controls.clamp(settings.imagePanX + dx, -0.5f, 0.5f);
+                settings.imagePanY = Controls.clamp(settings.imagePanY + dy, -0.5f, 0.5f);
                 preview.setSettings(settings);
             }
 
             @Override
             public void onZoom(float factor) {
-                settings.imageZoom = clamp(settings.imageZoom * factor, 0.5f, 3f);
+                settings.imageZoom = Controls.clamp(settings.imageZoom * factor, 0.5f, 3f);
                 preview.setSettings(settings);
             }
 
@@ -171,12 +169,23 @@ public class MainActivity extends Activity {
 
     private void buildControls() {
         controls.removeAllViews();
+        ui = new Controls(this, controls, expandedSections, new Controls.Listener() {
+            @Override
+            public void onLiveChange() {
+                preview.setSettings(settings);
+            }
+
+            @Override
+            public void onCommit() {
+                changed();
+            }
+        });
         WallpaperSettings s = settings;
         if (availableUpdate != null) {
             addUpdateBanner();
         }
 
-        LinearLayout looks = section("Looks", true);
+        LinearLayout looks = ui.section("Looks", true);
         HorizontalScrollView scroll = new HorizontalScrollView(this);
         scroll.setHorizontalScrollBarEnabled(false);
         looksRow = new LinearLayout(this);
@@ -184,11 +193,7 @@ public class MainActivity extends Activity {
         looksRow.setPadding(0, dp(6), 0, dp(4));
         scroll.addView(looksRow);
         looks.addView(scroll);
-        TextView looksHint = new TextView(this);
-        looksHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        looksHint.setTextColor(getColor(R.color.text_secondary));
-        looksHint.setText("Tap to apply. Long-press your own looks to update, rename or delete them.");
-        looks.addView(looksHint);
+        ui.hint(looks, "Tap to load a look into the editor. Long-press your own looks to update, rename, export or delete them.");
         Button saveLook = new Button(this);
         saveLook.setText("Save current look");
         saveLook.setOnClickListener(v -> saveLookDialog());
@@ -226,36 +231,32 @@ public class MainActivity extends Activity {
         looks.addView(shareRow);
         refreshLooks();
 
-        LinearLayout fit = section("Image fit", true);
-        choiceColumn(fit, new String[] {"Fill (crop to fill the screen)", "Fit (show the whole image)",
+        LinearLayout fit = ui.section("Image fit", true);
+        ui.choiceColumn(fit, new String[] {"Fill (crop to fill the screen)", "Fit (show the whole image)",
                         "Stretch", "Fit width", "Fit height"},
                 new int[] {WallpaperSettings.FIT_FILL, WallpaperSettings.FIT_FIT, WallpaperSettings.FIT_STRETCH,
                         WallpaperSettings.FIT_WIDTH, WallpaperSettings.FIT_HEIGHT},
                 s.fitMode, v -> s.fitMode = v);
-        slider(fit, "Zoom", 0.5f, 3f, () -> s.imageZoom, v -> s.imageZoom = v, v -> Math.round(v * 100) + "%");
-        slider(fit, "Horizontal position", -0.5f, 0.5f, () -> s.imagePanX, v -> s.imagePanX = v,
-                MainActivity::position);
-        slider(fit, "Vertical position", -0.5f, 0.5f, () -> s.imagePanY, v -> s.imagePanY = v,
-                MainActivity::position);
-        label(fit, "Edges (where the image doesn't reach)");
-        choice(fit, new String[] {"Blurred image", "Black"},
+        ui.slider(fit, "Zoom", 0.5f, 3f, () -> s.imageZoom, v -> s.imageZoom = v, v -> Math.round(v * 100) + "%");
+        ui.slider(fit, "Horizontal position", -0.5f, 0.5f, () -> s.imagePanX, v -> s.imagePanX = v,
+                Controls::position);
+        ui.slider(fit, "Vertical position", -0.5f, 0.5f, () -> s.imagePanY, v -> s.imagePanY = v,
+                Controls::position);
+        ui.label(fit, "Edges (where the image doesn't reach)");
+        ui.choice(fit, new String[] {"Blurred image", "Black"},
                 new int[] {WallpaperSettings.EDGES_BLUR, WallpaperSettings.EDGES_BLACK},
                 s.edgeStyle, v -> s.edgeStyle = v);
-        toggle(fit, "Zoom in slightly so motion never shows the edges",
+        ui.toggle(fit, "Zoom in slightly so motion never shows the edges",
                 () -> s.hideEdges, v -> s.hideEdges = v);
-        TextView fitHint = new TextView(this);
-        fitHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        fitHint.setTextColor(getColor(R.color.text_secondary));
-        fitHint.setText("Tip: drag the preview to move the image, pinch to zoom, double-tap to reset.");
-        fit.addView(fitHint);
+        ui.hint(fit, "Tip: drag the preview to move the image, pinch to zoom, double-tap to reset.");
 
-        LinearLayout glow = section("Glow (the image's own colors)", true);
-        slider(glow, "Bass glow", 0f, 3f, () -> s.bassGlow, v -> s.bassGlow = v, MainActivity::percent);
-        slider(glow, "Treble glow", 0f, 3f, () -> s.highGlow, v -> s.highGlow = v, MainActivity::percent);
-        slider(glow, "Beat flare", 0f, 3f, () -> s.beatFlare, v -> s.beatFlare = v, MainActivity::percent);
-        slider(glow, "Halo size", 0f, 3f, () -> s.bloom, v -> s.bloom = v, MainActivity::percent);
-        slider(glow, "Coverage (how much of the image glows)", 0f, 1f,
-                () -> s.glowCoverage, v -> s.glowCoverage = v, MainActivity::percent);
+        LinearLayout glow = ui.section("Glow (the image's own colors)", true);
+        ui.slider(glow, "Bass glow", 0f, 3f, () -> s.bassGlow, v -> s.bassGlow = v, Controls::percent);
+        ui.slider(glow, "Treble glow", 0f, 3f, () -> s.highGlow, v -> s.highGlow = v, Controls::percent);
+        ui.slider(glow, "Beat flare", 0f, 3f, () -> s.beatFlare, v -> s.beatFlare = v, Controls::percent);
+        ui.slider(glow, "Halo size", 0f, 3f, () -> s.bloom, v -> s.bloom = v, Controls::percent);
+        ui.slider(glow, "Coverage (how much of the image glows)", 0f, 1f,
+                () -> s.glowCoverage, v -> s.glowCoverage = v, Controls::percent);
         Button paint = new Button(this);
         paint.setText("Paint where it glows");
         paint.setOnClickListener(v -> {
@@ -274,11 +275,11 @@ public class MainActivity extends Activity {
         });
         glow.addView(paint, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        toggle(glow, "Swap which color follows the bass",
+        ui.toggle(glow, "Swap which color follows the bass",
                 () -> s.swapGlowColors, v -> s.swapGlowColors = v);
 
-        LinearLayout albumArt = section("Album art", false);
-        toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
+        LinearLayout albumArt = ui.section("Album art", false);
+        ui.toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
             s.albumArt = v;
             if (v && !AlbumArtSource.hasAccess(this)) {
                 askForMediaAccess();
@@ -286,111 +287,107 @@ public class MainActivity extends Activity {
             updateArtSource();
             loadPreviewImage();
         });
-        choice(albumArt, new String[] {"Card on blur", "Fill the screen"},
+        ui.choice(albumArt, new String[] {"Card on blur", "Fill the screen"},
                 new int[] {WallpaperSettings.ART_CARD, WallpaperSettings.ART_FILL},
                 s.albumArtStyle, v -> {
                     s.albumArtStyle = v;
                     loadPreviewImage();
                 });
-        TextView artHint = new TextView(this);
-        artHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        artHint.setTextColor(getColor(R.color.text_secondary));
-        artHint.setText("Uses your image whenever nothing is playing. Needs notification access, which "
+        ui.hint(albumArt, "Uses your image whenever nothing is playing. Needs notification access, which "
                 + "Android requires to see what's playing; Resona never reads your notifications.");
-        albumArt.addView(artHint);
 
-        LinearLayout recolor = section("Recolor", false);
-        slider(recolor, "Hue shift", 0f, 360f, () -> s.hueShift, v -> s.hueShift = v,
+        LinearLayout recolor = ui.section("Recolor", false);
+        ui.slider(recolor, "Hue shift", 0f, 360f, () -> s.hueShift, v -> s.hueShift = v,
                 v -> Math.round(v) == 0 || Math.round(v) == 360 ? "Off" : "+" + Math.round(v) + "°");
-        slider(recolor, "Color cycle (keeps shifting)", 0f, 1f, () -> s.colorCycle, v -> s.colorCycle = v,
-                MainActivity::percent);
-        toggle(recolor, "Recolor the whole image, not just the glow",
+        ui.slider(recolor, "Color cycle (keeps shifting)", 0f, 1f, () -> s.colorCycle, v -> s.colorCycle = v,
+                Controls::percent);
+        ui.toggle(recolor, "Recolor the whole image, not just the glow",
                 () -> s.recolorImage, v -> s.recolorImage = v);
 
-        LinearLayout idle = section("Idle animation (moves without sound)", true);
-        slider(idle, "Breathing glow", 0f, 2f, () -> s.breathe, v -> s.breathe = v, MainActivity::percent);
-        slider(idle, "Breathing speed", 0.25f, 3f, () -> s.breatheSpeed, v -> s.breatheSpeed = v, MainActivity::speed);
-        slider(idle, "Sway", 0f, 2f, () -> s.sway, v -> s.sway = v, MainActivity::percent);
-        slider(idle, "Sway speed", 0.25f, 3f, () -> s.swaySpeed, v -> s.swaySpeed = v, MainActivity::speed);
+        LinearLayout idle = ui.section("Idle animation (moves without sound)", true);
+        ui.slider(idle, "Breathing glow", 0f, 2f, () -> s.breathe, v -> s.breathe = v, Controls::percent);
+        ui.slider(idle, "Breathing speed", 0.25f, 3f, () -> s.breatheSpeed, v -> s.breatheSpeed = v, Controls::speed);
+        ui.slider(idle, "Sway", 0f, 2f, () -> s.sway, v -> s.sway = v, Controls::percent);
+        ui.slider(idle, "Sway speed", 0.25f, 3f, () -> s.swaySpeed, v -> s.swaySpeed = v, Controls::speed);
 
-        LinearLayout sparkles = section("Particles", false);
-        choiceColumn(sparkles, new String[] {"Sparkles (on the glowing spots)", "Embers (rising)",
+        LinearLayout sparkles = ui.section("Particles", false);
+        ui.choiceColumn(sparkles, new String[] {"Sparkles (on the glowing spots)", "Embers (rising)",
                         "Falling stars", "Bubbles", "Light streaks"},
                 new int[] {WallpaperSettings.PARTICLE_SPARKLES, WallpaperSettings.PARTICLE_EMBERS,
                         WallpaperSettings.PARTICLE_STARS, WallpaperSettings.PARTICLE_BUBBLES,
                         WallpaperSettings.PARTICLE_STREAKS},
                 s.particleStyle, v -> s.particleStyle = v);
-        slider(sparkles, "Amount", 0f, 1f, () -> s.sparkleAmount, v -> s.sparkleAmount = v,
+        ui.slider(sparkles, "Amount", 0f, 1f, () -> s.sparkleAmount, v -> s.sparkleAmount = v,
                 v -> Math.round(v * WallpaperSettings.MAX_SPARKLES) == 0
                         ? "Off" : String.valueOf(Math.round(v * WallpaperSettings.MAX_SPARKLES)));
-        slider(sparkles, "Size", 0.25f, 3f, () -> s.sparkleSize, v -> s.sparkleSize = v, MainActivity::percent);
-        slider(sparkles, "Speed", 0.25f, 3f, () -> s.sparkleSpeed, v -> s.sparkleSpeed = v, MainActivity::speed);
-        slider(sparkles, "Brightness", 0f, 2f, () -> s.sparkleBrightness, v -> s.sparkleBrightness = v,
-                MainActivity::percent);
-        slider(sparkles, "Music reaction", 0f, 2f, () -> s.sparkleReact, v -> s.sparkleReact = v,
-                MainActivity::percent);
+        ui.slider(sparkles, "Size", 0.25f, 3f, () -> s.sparkleSize, v -> s.sparkleSize = v, Controls::percent);
+        ui.slider(sparkles, "Speed", 0.25f, 3f, () -> s.sparkleSpeed, v -> s.sparkleSpeed = v, Controls::speed);
+        ui.slider(sparkles, "Brightness", 0f, 2f, () -> s.sparkleBrightness, v -> s.sparkleBrightness = v,
+                Controls::percent);
+        ui.slider(sparkles, "Music reaction", 0f, 2f, () -> s.sparkleReact, v -> s.sparkleReact = v,
+                Controls::percent);
 
-        LinearLayout depth = section("Parallax (3D depth)", false);
-        slider(depth, "Tilt the phone", 0f, 2f, () -> s.tiltParallax, v -> {
+        LinearLayout depth = ui.section("Parallax (3D depth)", false);
+        ui.slider(depth, "Tilt the phone", 0f, 2f, () -> s.tiltParallax, v -> {
             s.tiltParallax = v;
             if (v > 0f && resumed) {
                 tilt.start();
             }
-        }, MainActivity::percent);
-        slider(depth, "Home-screen swipe", 0f, 2f, () -> s.swipeParallax, v -> s.swipeParallax = v,
-                MainActivity::percent);
+        }, Controls::percent);
+        ui.slider(depth, "Home-screen swipe", 0f, 2f, () -> s.swipeParallax, v -> s.swipeParallax = v,
+                Controls::percent);
 
-        LinearLayout beat = section("Beat effects", false);
-        slider(beat, "Pulse (zoom with the bass)", 0f, 2f, () -> s.pulse, v -> s.pulse = v, MainActivity::percent);
-        slider(beat, "Flash", 0f, 2f, () -> s.flash, v -> s.flash = v, MainActivity::percent);
-        slider(beat, "Shake", 0f, 2f, () -> s.shake, v -> s.shake = v, MainActivity::percent);
+        LinearLayout beat = ui.section("Beat effects", false);
+        ui.slider(beat, "Pulse (zoom with the bass)", 0f, 2f, () -> s.pulse, v -> s.pulse = v, Controls::percent);
+        ui.slider(beat, "Flash", 0f, 2f, () -> s.flash, v -> s.flash = v, Controls::percent);
+        ui.slider(beat, "Shake", 0f, 2f, () -> s.shake, v -> s.shake = v, Controls::percent);
 
-        LinearLayout viz = section("Visualizer overlay", false);
-        choice(viz, new String[] {"None", "Bars", "Circle", "Wave"},
+        LinearLayout viz = ui.section("Visualizer overlay", false);
+        ui.choice(viz, new String[] {"None", "Bars", "Circle", "Wave"},
                 new int[] {WallpaperSettings.STYLE_NONE, WallpaperSettings.STYLE_BARS,
                         WallpaperSettings.STYLE_CIRCLE, WallpaperSettings.STYLE_WAVE},
                 s.style, v -> {
                     s.style = v;
                     updateVisibility();
                 });
-        slider(viz, "Height", 0f, 2f, () -> s.vizHeight, v -> s.vizHeight = v, MainActivity::percent);
-        slider(viz, "Opacity", 0f, 1f, () -> s.vizOpacity, v -> s.vizOpacity = v, MainActivity::percent);
-        slider(viz, "Bar count", WallpaperSettings.MIN_BARS, WallpaperSettings.MAX_BARS,
+        ui.slider(viz, "Height", 0f, 2f, () -> s.vizHeight, v -> s.vizHeight = v, Controls::percent);
+        ui.slider(viz, "Opacity", 0f, 1f, () -> s.vizOpacity, v -> s.vizOpacity = v, Controls::percent);
+        ui.slider(viz, "Bar count", WallpaperSettings.MIN_BARS, WallpaperSettings.MAX_BARS,
                 () -> s.barCount, v -> {
                     s.barCount = Math.round(v);
                     applyAudioSettings();
                 }, v -> String.valueOf(Math.round(v)));
-        LinearLayout circle = group(viz);
-        slider(circle, "Ring position (up / down)", 0.2f, 0.8f, () -> s.circleY, v -> s.circleY = v,
-                MainActivity::percent);
-        slider(circle, "Ring size", 0.15f, 0.45f, () -> s.circleSize, v -> s.circleSize = v, MainActivity::percent);
+        LinearLayout circle = ui.group(viz);
+        ui.slider(circle, "Ring position (up / down)", 0.2f, 0.8f, () -> s.circleY, v -> s.circleY = v,
+                Controls::percent);
+        ui.slider(circle, "Ring size", 0.15f, 0.45f, () -> s.circleSize, v -> s.circleSize = v, Controls::percent);
         circleOptions = circle;
-        label(viz, "Color");
-        choice(viz, new String[] {"From image", "Rainbow", "Custom"},
+        ui.label(viz, "Color");
+        ui.choice(viz, new String[] {"From image", "Rainbow", "Custom"},
                 new int[] {WallpaperSettings.COLOR_AUTO, WallpaperSettings.COLOR_RAINBOW,
                         WallpaperSettings.COLOR_CUSTOM},
                 s.colorMode, v -> {
                     s.colorMode = v;
                     updateVisibility();
                 });
-        LinearLayout hue = group(viz);
-        slider(hue, "Hue", 0f, 360f, () -> s.hue, v -> s.hue = v, v -> Math.round(v) + "°");
+        LinearLayout hue = ui.group(viz);
+        ui.slider(hue, "Hue", 0f, 360f, () -> s.hue, v -> s.hue = v, v -> Math.round(v) + "°");
         hueOption = hue;
 
-        LinearLayout sound = section("Audio", false);
-        slider(sound, "Sensitivity", 0.25f, 3f, () -> s.sensitivity, v -> {
+        LinearLayout sound = ui.section("Audio", false);
+        ui.slider(sound, "Sensitivity", 0.25f, 3f, () -> s.sensitivity, v -> {
             s.sensitivity = v;
             applyAudioSettings();
-        }, MainActivity::percent);
-        slider(sound, "Smoothing (snappy ↔ smooth)", 0f, 1f, () -> s.smoothing, v -> {
+        }, Controls::percent);
+        ui.slider(sound, "Smoothing (snappy ↔ smooth)", 0f, 1f, () -> s.smoothing, v -> {
             s.smoothing = v;
             applyAudioSettings();
         }, v -> Math.round(v * 100) + "%");
-        slider(sound, "Beat sensitivity", 0f, 1f, () -> s.beatSensitivity, v -> {
+        ui.slider(sound, "Beat sensitivity", 0f, 1f, () -> s.beatSensitivity, v -> {
             s.beatSensitivity = v;
             applyAudioSettings();
         }, v -> Math.round(v * 100) + "%");
-        label(sound, "Sync: if the wallpaper reacts before you hear the beat, add delay. "
+        ui.label(sound, "Sync: if the wallpaper reacts before you hear the beat, add delay. "
                 + "Bluetooth usually needs 150–300 ms. Calibrate to measure it.");
         Button calibrate = new Button(this);
         calibrate.setText("Calibrate sync (tap along)");
@@ -402,78 +399,66 @@ public class MainActivity extends Activity {
         routeLabel.setTextColor(getColor(R.color.accent));
         sound.addView(routeLabel);
         updateRouteLabel();
-        slider(sound, "Delay – phone speaker / wired", 0f, 600f, () -> s.syncSpeakerMs, v -> {
+        ui.slider(sound, "Delay – phone speaker / wired", 0f, 600f, () -> s.syncSpeakerMs, v -> {
             s.syncSpeakerMs = Math.round(v);
             applyAudioSettings();
         }, v -> Math.round(v) + " ms");
-        slider(sound, "Delay – Bluetooth", 0f, 600f, () -> s.syncBluetoothMs, v -> {
+        ui.slider(sound, "Delay – Bluetooth", 0f, 600f, () -> s.syncBluetoothMs, v -> {
             s.syncBluetoothMs = Math.round(v);
             applyAudioSettings();
         }, v -> Math.round(v) + " ms");
-        label(sound, "React to");
-        choice(sound, new String[] {"Phone audio", "Microphone"},
+        ui.label(sound, "React to");
+        ui.choice(sound, new String[] {"Phone audio", "Microphone"},
                 new int[] {WallpaperSettings.SOURCE_SYSTEM, WallpaperSettings.SOURCE_MIC},
                 s.source, v -> {
                     s.source = v;
                     applyAudioSettings();
                     restartAudio();
                 });
-        toggle(sound, "Demo beat in preview (tune without music)", () -> demoOn, v -> {
+        ui.toggle(sound, "Demo beat in preview (tune without music)", () -> demoOn, v -> {
             demoOn = v;
             applyAudioSettings();
             restartAudio();
         });
 
-        LinearLayout widget = section("Home screen media buttons", false);
-        label(widget, "A widget with previous, play/pause and next that can be faint or completely "
+        LinearLayout widget = ui.section("Home screen media buttons", false);
+        ui.label(widget, "A widget with previous, play/pause and next that can be faint or completely "
                 + "invisible, so your screen shows only the wallpaper.");
         Button addWidget = new Button(this);
         addWidget.setText("Add media buttons to home screen");
         addWidget.setOnClickListener(v -> addMediaWidget());
         widget.addView(addWidget, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        toggle(widget, "Show where the buttons are", () -> MediaWidgetProvider.revealing(this),
+        ui.toggle(widget, "Show where the buttons are", () -> MediaWidgetProvider.revealing(this),
                 v -> MediaWidgetProvider.setRevealing(this, v));
-        TextView widgetHint = new TextView(this);
-        widgetHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        widgetHint.setTextColor(getColor(R.color.text_secondary));
-        widgetHint.setText("Outlines the buttons on every Resona widget until you turn this off. "
+        ui.hint(widget, "Outlines the buttons on every Resona widget until you turn this off. "
                 + "Long-press a widget (Android 12+) to change how visible it is.");
-        widget.addView(widgetHint);
 
-        LinearLayout battery = section("Battery", false);
-        label(battery, "Battery saver: lower frame rate and half the particles");
-        choice(battery, new String[] {"Off", "Auto", "Always"},
+        LinearLayout battery = ui.section("Battery", false);
+        ui.label(battery, "Battery saver: lower frame rate and half the particles");
+        ui.choice(battery, new String[] {"Off", "Auto", "Always"},
                 new int[] {WallpaperSettings.SAVER_OFF, WallpaperSettings.SAVER_AUTO, WallpaperSettings.SAVER_ALWAYS},
                 s.batterySaver, v -> s.batterySaver = v);
-        TextView saverHint = new TextView(this);
-        saverHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        saverHint.setTextColor(getColor(R.color.text_secondary));
-        saverHint.setText("Auto: when the phone is in battery saver or below 20% and not charging.");
-        battery.addView(saverHint);
-        slider(battery, "Sleep after silence", 0f, 30f, () -> s.sleepMinutes, v -> s.sleepMinutes = Math.round(v),
+        ui.hint(battery, "Auto: when the phone is in battery saver or below 20% and not charging.");
+        ui.slider(battery, "Sleep after silence", 0f, 30f, () -> s.sleepMinutes, v -> s.sleepMinutes = Math.round(v),
                 v -> Math.round(v) == 0 ? "Never" : Math.round(v) + " min");
 
-        LinearLayout about = section("About & updates", false);
-        label(about, "Resona " + Updater.installedVersion(this));
+        LinearLayout about = ui.section("About & updates", false);
+        ui.label(about, "Resona " + Updater.installedVersion(this));
         Button check = new Button(this);
         check.setText("Check for updates");
         check.setOnClickListener(v -> checkForUpdate(true));
         about.addView(check, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        toggle(about, "Check automatically when opening the app",
+        ui.toggle(about, "Check automatically when opening the app",
                 () -> Updater.autoCheckEnabled(this), v -> Updater.setAutoCheck(this, v));
         Button diagnostics = new Button(this);
         diagnostics.setText("Export diagnostics");
         diagnostics.setOnClickListener(v -> exportDiagnostics());
         about.addView(diagnostics, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView diagnosticsHint = new TextView(this);
-        diagnosticsHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        diagnosticsHint.setTextColor(getColor(R.color.text_secondary));
-        diagnosticsHint.setText("Saves a text report (phone, settings, recent crashes and app log) to send "
+        ui.hint(about, "Saves a text report (phone, settings, recent crashes and app log) to send "
                 + "when something goes wrong. No pictures or notification contents are included.");
-        about.addView(diagnosticsHint);
 
         Button reset = new Button(this);
         reset.setText("Reset all effects to defaults");
@@ -586,7 +571,7 @@ public class MainActivity extends Activity {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(24), dp(8), dp(24), 0);
-        label(box, "Switch looks");
+        ui.label(box, "Switch looks");
         TextView minutesLabel = new TextView(this);
         SeekBar minutesBar = new SeekBar(this);
         RadioGroup modes = new RadioGroup(this);
@@ -629,7 +614,7 @@ public class MainActivity extends Activity {
             }
         });
         box.addView(minutesBar);
-        label(box, "Looks to rotate through");
+        ui.label(box, "Looks to rotate through");
         for (PresetStore.Preset preset : all) {
             CheckBox check = new CheckBox(this);
             check.setText(preset.name);
@@ -1530,208 +1515,8 @@ public class MainActivity extends Activity {
         });
     }
 
-    // ---- Control builders -------------------------------------------------
-
-    private interface FloatGetter {
-        float get();
-    }
-
-    private interface FloatSetter {
-        void set(float value);
-    }
-
-    private interface BoolGetter {
-        boolean get();
-    }
-
-    private interface BoolSetter {
-        void set(boolean value);
-    }
-
-    private interface IntSetter {
-        void set(int value);
-    }
-
-    private interface Formatter {
-        String format(float value);
-    }
-
-    private static String percent(float v) {
-        int p = Math.round(v * 100);
-        return p == 0 ? "Off" : p + "%";
-    }
-
-    private static String position(float v) {
-        int p = Math.round(v * 100);
-        return p == 0 ? "Centered" : (p > 0 ? "+" : "") + p + "%";
-    }
-
-    private static float clamp(float v, float lo, float hi) {
-        return Math.max(lo, Math.min(hi, v));
-    }
-
-    private static String speed(float v) {
-        return String.format(Locale.US, "%.2f×", v);
-    }
-
     private int dp(float value) {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value,
                 getResources().getDisplayMetrics()));
-    }
-
-    /** A collapsible section; returns the container its controls go in. */
-    private LinearLayout section(String title, boolean expanded) {
-        TextView header = new TextView(this);
-        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        header.setTypeface(Typeface.DEFAULT_BOLD);
-        header.setLetterSpacing(0.06f);
-        header.setAllCaps(true);
-        header.setTextColor(getColor(R.color.accent));
-        header.setMinHeight(dp(48));
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(8);
-        controls.addView(header, lp);
-
-        LinearLayout body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(0, 0, 0, dp(8));
-        controls.addView(body, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        Runnable refresh = () -> header.setText((body.getVisibility() == View.VISIBLE ? "▾  " : "▸  ") + title);
-        // Remember open/closed sections across rebuilds (e.g. after applying a look).
-        boolean open = expandedSections.getOrDefault(title, expanded);
-        body.setVisibility(open ? View.VISIBLE : View.GONE);
-        refresh.run();
-        header.setOnClickListener(v -> {
-            boolean nowOpen = body.getVisibility() != View.VISIBLE;
-            body.setVisibility(nowOpen ? View.VISIBLE : View.GONE);
-            expandedSections.put(title, nowOpen);
-            refresh.run();
-        });
-        return body;
-    }
-
-    /** A plain sub-container, used for controls that show or hide together. */
-    private LinearLayout group(LinearLayout parent) {
-        LinearLayout g = new LinearLayout(this);
-        g.setOrientation(LinearLayout.VERTICAL);
-        parent.addView(g, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        return g;
-    }
-
-    private void label(LinearLayout parent, String text) {
-        TextView label = new TextView(this);
-        label.setText(text);
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        label.setTextColor(getColor(R.color.text_primary));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.topMargin = dp(10);
-        parent.addView(label, lp);
-    }
-
-    private void slider(LinearLayout parent, String title, float min, float max,
-                        FloatGetter getter, FloatSetter setter, Formatter formatter) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        TextView label = new TextView(this);
-        label.setText(title);
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        label.setTextColor(getColor(R.color.text_primary));
-        TextView value = new TextView(this);
-        value.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        value.setTextColor(getColor(R.color.text_secondary));
-        value.setText(formatter.format(getter.get()));
-        row.addView(label, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        row.addView(value, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        rowLp.topMargin = dp(10);
-        parent.addView(row, rowLp);
-
-        SeekBar bar = new SeekBar(this);
-        bar.setMax(SEEK_STEPS);
-        float fraction = (getter.get() - min) / (max - min);
-        bar.setProgress(Math.round(Math.max(0f, Math.min(1f, fraction)) * SEEK_STEPS));
-        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser) {
-                    float v = min + (max - min) * progress / SEEK_STEPS;
-                    setter.set(v);
-                    value.setText(formatter.format(v));
-                    preview.setSettings(settings);
-                }
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-            }
-
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-                changed();
-            }
-        });
-        parent.addView(bar, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)));
-    }
-
-    private void toggle(LinearLayout parent, String title, BoolGetter getter, BoolSetter setter) {
-        Switch toggle = new Switch(this);
-        toggle.setText(title);
-        toggle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        toggle.setTextColor(getColor(R.color.text_primary));
-        toggle.setChecked(getter.get());
-        toggle.setOnCheckedChangeListener((b, checked) -> {
-            setter.set(checked);
-            changed();
-        });
-        parent.addView(toggle, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)));
-    }
-
-    private void choice(LinearLayout parent, String[] labels, int[] values, int current, IntSetter setter) {
-        choice(parent, labels, values, current, setter, true);
-    }
-
-    /** One option per line, for longer labels. */
-    private void choiceColumn(LinearLayout parent, String[] labels, int[] values, int current, IntSetter setter) {
-        choice(parent, labels, values, current, setter, false);
-    }
-
-    private void choice(LinearLayout parent, String[] labels, int[] values, int current, IntSetter setter,
-                        boolean horizontal) {
-        RadioGroup group = new RadioGroup(this);
-        group.setOrientation(horizontal ? RadioGroup.HORIZONTAL : RadioGroup.VERTICAL);
-        int[] ids = new int[labels.length];
-        for (int i = 0; i < labels.length; i++) {
-            RadioButton button = new RadioButton(this);
-            ids[i] = View.generateViewId();
-            button.setId(ids[i]);
-            button.setText(labels[i]);
-            button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-            button.setTextColor(getColor(R.color.text_primary));
-            button.setMinHeight(dp(48));
-            group.addView(button, horizontal
-                    ? new RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    : new RadioGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            if (values[i] == current) {
-                group.check(ids[i]);
-            }
-        }
-        group.setOnCheckedChangeListener((g, checkedId) -> {
-            for (int i = 0; i < ids.length; i++) {
-                if (ids[i] == checkedId) {
-                    setter.set(values[i]);
-                    changed();
-                }
-            }
-        });
-        parent.addView(group, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 }

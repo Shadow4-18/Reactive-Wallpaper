@@ -35,6 +35,8 @@ final class AudioAnalyzer {
     private float[] work = new float[0];
     private float[] raw = new float[0];
     private float[] previousRaw = new float[0];
+    /** Each band's own recent peak, so quieter mids and highs still move fully. */
+    private float[] bandPeak = new float[0];
     private float[] target = new float[0];
     private float[] bands = new float[0];
     private float peak;
@@ -64,6 +66,7 @@ final class AudioAnalyzer {
             raw = new float[count];
             previousRaw = new float[count];
             target = new float[count];
+            bandPeak = new float[count];
         }
     }
 
@@ -208,9 +211,16 @@ final class AudioAnalyzer {
         int bassCount = 0;
         float highSum = 0f;
         int highStart = (int) (n * 0.35f);
+        float bandDecay = (float) Math.pow(0.7, frameDt);
+        // A band is never boosted past ~12x the loudest one, so silence stays still.
+        float bandFloor = Math.max(norm * 0.08f, noiseFloor);
         for (int i = 0; i < n; i++) {
             float normalized = raw[i] / norm;
-            target[i] = Math.min(1f, normalized * sensitivity);
+            // What's drawn mixes the overall level (bass stays strongest) with the band's
+            // own level (mids and highs move fully), since music is far louder in the bass.
+            bandPeak[i] = Math.max(raw[i], bandPeak[i] * bandDecay);
+            float own = raw[i] / Math.max(bandPeak[i], bandFloor);
+            target[i] = Math.min(1f, (0.4f * normalized + 0.6f * own) * sensitivity);
             float fHi = MIN_FREQ * (float) Math.pow(ratio, (i + 1) / (float) n);
             if (fHi <= BASS_MAX_FREQ || i == 0) {
                 bassSum += normalized;
