@@ -91,6 +91,14 @@ public class RenderSnapshotTest {
             s.flash = 0f;
         });
         snap("05_silence", image, false, s -> s.style = WallpaperSettings.STYLE_NONE);
+        snap("06_mirror", image, true, s -> s.style = WallpaperSettings.STYLE_MIRROR);
+        snap("07_led_meter", image, true, s -> s.style = WallpaperSettings.STYLE_LED);
+        snap("08_orb", image, true, s -> {
+            s.style = WallpaperSettings.STYLE_ORB;
+            s.circleY = 0.58f;
+            s.circleSize = 0.3f;
+        });
+        snap("09_neon_lines", image, true, s -> s.style = WallpaperSettings.STYLE_LINES);
     }
 
     @Test

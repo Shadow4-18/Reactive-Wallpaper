@@ -20,6 +20,15 @@ final class WallpaperSettings {
     static final int STYLE_BARS = 1;
     static final int STYLE_CIRCLE = 2;
     static final int STYLE_WAVE = 3;
+    static final int STYLE_MIRROR = 4;
+    static final int STYLE_LED = 5;
+    static final int STYLE_ORB = 6;
+    static final int STYLE_LINES = 7;
+
+    /** Styles centered on the ring position (which can line up with artwork). */
+    static boolean isRing(int style) {
+        return style == STYLE_CIRCLE || style == STYLE_ORB;
+    }
 
     static final int COLOR_AUTO = 0;
     static final int COLOR_RAINBOW = 1;

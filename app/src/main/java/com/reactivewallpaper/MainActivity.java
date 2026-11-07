@@ -351,9 +351,12 @@ public class MainActivity extends Activity {
         ui.hint(touch, "Touch empty space on your home screen. Tap the preview here to try it.");
 
         LinearLayout viz = ui.section("Visualizer overlay", false);
-        ui.choice(viz, new String[] {"None", "Bars", "Circle", "Wave"},
+        ui.choiceColumn(viz, new String[] {"None", "Bars", "Mirror bars", "LED meter (peaks hold and fall)",
+                "Circle", "Orb (ripples with the music)", "Wave", "Neon lines"},
                 new int[] {WallpaperSettings.STYLE_NONE, WallpaperSettings.STYLE_BARS,
-                        WallpaperSettings.STYLE_CIRCLE, WallpaperSettings.STYLE_WAVE},
+                        WallpaperSettings.STYLE_MIRROR, WallpaperSettings.STYLE_LED,
+                        WallpaperSettings.STYLE_CIRCLE, WallpaperSettings.STYLE_ORB,
+                        WallpaperSettings.STYLE_WAVE, WallpaperSettings.STYLE_LINES},
                 s.style, v -> {
                     s.style = v;
                     updateVisibility();
@@ -880,7 +883,7 @@ public class MainActivity extends Activity {
     }
 
     private void updateVisibility() {
-        circleOptions.setVisibility(settings.style == WallpaperSettings.STYLE_CIRCLE ? View.VISIBLE : View.GONE);
+        circleOptions.setVisibility(WallpaperSettings.isRing(settings.style) ? View.VISIBLE : View.GONE);
         hueOption.setVisibility(settings.colorMode == WallpaperSettings.COLOR_CUSTOM ? View.VISIBLE : View.GONE);
     }
 

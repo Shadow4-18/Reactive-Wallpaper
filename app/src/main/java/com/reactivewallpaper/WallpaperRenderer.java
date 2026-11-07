@@ -64,6 +64,9 @@ final class WallpaperRenderer {
     private final Matrix auraMatrix = new Matrix();
     private final Paint auraPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final float[] point = new float[2];
+    private VisualizerStyles styles;
+    private WallpaperSettings paletteSettings;
+    private final VisualizerStyles.Palette palette = position -> colorAt(paletteSettings, position);
     private int auraTint;
     private float[] accentHues = DEFAULT_HUES;
     private float time;
@@ -227,7 +230,7 @@ final class WallpaperRenderer {
             }
             // Record the whole frame, then draw it through the effects shader.
             drawFrame(fx.begin(w, h), w, h, audio, s, dt);
-            float centerY = s.style == WallpaperSettings.STYLE_CIRCLE ? h * s.circleY : h * 0.55f;
+            float centerY = WallpaperSettings.isRing(s.style) ? h * s.circleY : h * 0.55f;
             fx.end(canvas, w, h, s, audio, dt, centerY);
             return;
         }
@@ -280,6 +283,21 @@ final class WallpaperRenderer {
             case WallpaperSettings.STYLE_WAVE:
                 drawWave(canvas, w, h, audio.bands(), s);
                 break;
+            case WallpaperSettings.STYLE_MIRROR:
+                styles().drawMirror(canvas, w, h, audio.bands(), s, palette(s));
+                break;
+            case WallpaperSettings.STYLE_LED:
+                styles().drawLed(canvas, w, h, audio.bands(), s, palette(s), dt);
+                break;
+            case WallpaperSettings.STYLE_ORB:
+                canvas.save();
+                canvas.translate(parallaxX, parallaxY);
+                styles().drawOrb(canvas, w, h, audio.bands(), s, palette(s), bass, dt);
+                canvas.restore();
+                break;
+            case WallpaperSettings.STYLE_LINES:
+                styles().drawLines(canvas, w, h, audio.bands(), s, palette(s), dt);
+                break;
             default:
                 break;
         }
@@ -295,6 +313,18 @@ final class WallpaperRenderer {
             fillPaint.setAlpha((int) (255 * Math.min(0.6f, beat * 0.3f * s.flash)));
             canvas.drawRect(0, 0, w, h, fillPaint);
         }
+    }
+
+    private VisualizerStyles styles() {
+        if (styles == null) {
+            styles = new VisualizerStyles(density);
+        }
+        return styles;
+    }
+
+    private VisualizerStyles.Palette palette(WallpaperSettings s) {
+        paletteSettings = s;
+        return palette;
     }
 
     /** Only still pictures have a subject to lift out; videos and GIFs move on their own. */
@@ -425,7 +455,7 @@ final class WallpaperRenderer {
         matrix.setScale(sx, sy);
         matrix.postTranslate((w - bw * sx) / 2f + panX + dx, (h - bh * sy) / 2f + panY + dy);
         // Zoom around the ring when there is one, so artwork under it stays lined up.
-        float pivotY = s.style == WallpaperSettings.STYLE_CIRCLE ? h * s.circleY : h / 2f;
+        float pivotY = WallpaperSettings.isRing(s.style) ? h * s.circleY : h / 2f;
         matrix.postScale(zoom, zoom, w / 2f, pivotY);
         if (angle != 0f) {
             matrix.postRotate(angle, w / 2f, pivotY);
