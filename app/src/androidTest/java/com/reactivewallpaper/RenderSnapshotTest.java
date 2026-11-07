@@ -243,7 +243,7 @@ public class RenderSnapshotTest {
             });
             // The pieces themselves: the cut-out, and the background with the subject filled in.
             SubjectLayer layer = SubjectLayer.build(image, subjectMask);
-            TestScenes.saveShot(context, "render_64_subject_cutout", layer.cutout);
+            TestScenes.saveShot(context, "render_64_subject_cutout", layer.parts[0].cutout);
             TestScenes.saveShot(context, "render_65_subject_plate", layer.plate);
             layer.release();
         } finally {
@@ -322,5 +322,58 @@ public class RenderSnapshotTest {
         TestScenes.saveShot(context, "render_" + name, out);
         renderer.release();
         out.recycle();
+    }
+
+    /** The neon scene with a second, smaller figure further back on the left. */
+    static Bitmap twoFigures() {
+        Bitmap image = TestScenes.neon(1200, 2660).copy(Bitmap.Config.ARGB_8888, true);
+        Canvas c = new Canvas(image);
+        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        p.setColor(0xFF2A1F3A);
+        c.drawCircle(260, 1500, 60, p);
+        c.drawRect(170, 1560, 350, 2000, p);
+        return image;
+    }
+
+    /** Red: the front figure (as {@link #figureMask}); green: the one further back. */
+    static Bitmap twoFigureMask() {
+        Bitmap mask = Bitmap.createBitmap(300, 665, Bitmap.Config.ARGB_8888);
+        mask.eraseColor(0xFF000000);
+        Canvas c = new Canvas(mask);
+        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        p.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.ADD));
+        p.setColor(0xFFFF0000);
+        c.drawCircle(150, 400.7f, 27, p);
+        c.drawRect(102, 424.7f, 198, 571.9f, p);
+        p.setColor(0xFF00FF00);
+        c.drawCircle(65, 375, 15, p);
+        c.drawRect(42.5f, 390, 87.5f, 500, p);
+        return mask;
+    }
+
+    @Test
+    public void severalSubjectsAtTheirOwnDepths() throws Exception {
+        Bitmap image = twoFigures();
+        Bitmap mask = twoFigureMask();
+        SubjectLayer layer = SubjectLayer.build(image, mask);
+        org.junit.Assert.assertEquals("two subjects", 2, layer.parts.length);
+        // The lower (front) figure is drawn last and gets the full depth.
+        org.junit.Assert.assertEquals(1f, layer.parts[1].depth, 0.001f);
+        org.junit.Assert.assertTrue(layer.parts[0].depth < 0.5f);
+        org.junit.Assert.assertTrue(layer.parts[1].centerX > layer.parts[0].centerX);
+        TestScenes.saveShot(context, "render_69_two_subjects_plate", layer.plate);
+        layer.release();
+        subjectMask = mask;
+        tiltX = 1f;
+        try {
+            snap("68_two_subjects_tilted", image, true, s -> {
+                s.subjectDepth = 1f;
+                s.tiltParallax = 1.5f;
+                s.subjectAura = 0.8f;
+            });
+        } finally {
+            subjectMask = null;
+            tiltX = 0f;
+        }
     }
 }

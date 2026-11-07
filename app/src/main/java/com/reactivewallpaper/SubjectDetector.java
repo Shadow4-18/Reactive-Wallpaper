@@ -6,6 +6,7 @@ import android.os.Looper;
 import android.util.Log;
 
 import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.segmentation.subject.Subject;
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation;
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenter;
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions;
@@ -41,11 +42,18 @@ final class SubjectDetector {
                     : image.copy(Bitmap.Config.ARGB_8888, false);
             SubjectSegmenter segmenter = SubjectSegmentation.getClient(new SubjectSegmenterOptions.Builder()
                     .enableForegroundConfidenceMask()
+                    .enableMultipleSubjects(new SubjectSegmenterOptions.SubjectResultOptions.Builder()
+                            .enableConfidenceMask()
+                            .build())
                     .build());
             segmenter.process(InputImage.fromBitmap(input, 0))
                     .addOnSuccessListener(result -> {
-                        FloatBuffer confidence = result.getForegroundConfidenceMask();
-                        Bitmap mask = confidence != null ? toMask(confidence, input.getWidth(), input.getHeight()) : null;
+                        // Separate subjects when there are several; else the whole foreground.
+                        Bitmap mask = subjectsMask(result.getSubjects(), input.getWidth(), input.getHeight());
+                        if (mask == null) {
+                            FloatBuffer confidence = result.getForegroundConfidenceMask();
+                            mask = confidence != null ? toMask(confidence, input.getWidth(), input.getHeight()) : null;
+                        }
                         input.recycle();
                         close(segmenter);
                         if (mask == null) {
@@ -82,6 +90,53 @@ final class SubjectDetector {
             return "Google Play services is still downloading the detector. Try again in a minute.";
         }
         return "Automatic detection didn't work on this phone. Paint the subject by hand.";
+    }
+
+    /**
+     * Two or more subjects as one mask with a subject in each color channel
+     * (red, green, blue; the largest three), so each can be its own layer.
+     * Null for fewer than two (the foreground mask covers a single one).
+     */
+    static Bitmap subjectsMask(java.util.List<Subject> subjects, int w, int h) {
+        if (subjects == null || subjects.size() < 2) {
+            return null;
+        }
+        java.util.List<Subject> largest = new java.util.ArrayList<>(subjects);
+        largest.sort((a, b) -> Integer.compare(b.getWidth() * b.getHeight(), a.getWidth() * a.getHeight()));
+        int count = Math.min(SubjectLayer.MAX_PARTS, largest.size());
+        int[] px = new int[w * h];
+        java.util.Arrays.fill(px, 0xFF000000);
+        int found = 0;
+        for (int c = 0; c < count; c++) {
+            Subject s = largest.get(c);
+            FloatBuffer confidence = s.getConfidenceMask();
+            if (confidence == null) {
+                continue;
+            }
+            confidence.rewind();
+            int shift = 16 - 8 * c;
+            int marked = 0;
+            for (int y = 0; y < s.getHeight(); y++) {
+                for (int x = 0; x < s.getWidth(); x++) {
+                    float v = confidence.hasRemaining() ? confidence.get() : 0f;
+                    int ix = s.getStartX() + x;
+                    int iy = s.getStartY() + y;
+                    if (ix < 0 || iy < 0 || ix >= w || iy >= h) {
+                        continue;
+                    }
+                    float t = Math.max(0f, Math.min(1f, (v - 0.35f) / 0.3f));
+                    int level = Math.round(t * t * (3f - 2f * t) * 255f);
+                    if (level > 127) {
+                        marked++;
+                    }
+                    px[iy * w + ix] |= level << shift;
+                }
+            }
+            if (marked > w * h * 0.002f) {
+                found++;
+            }
+        }
+        return found >= 2 ? Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888) : null;
     }
 
     /**

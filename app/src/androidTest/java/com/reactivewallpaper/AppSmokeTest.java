@@ -139,6 +139,17 @@ public class AppSmokeTest {
         activity.finish();
     }
 
+    /** The subject painter with two detected subjects, each in its own color. */
+    @Test
+    public void subjectPainterWithLayers() throws Exception {
+        ImageStore.saveMask(RenderSnapshotTest.twoFigureMask(), ImageStore.draftSubjectFile(context));
+        Intent extras = new Intent().putExtra(GlowPaintActivity.EXTRA_SUBJECT, true);
+        Activity activity = start(GlowPaintActivity.class, extras);
+        shot("13_subject_painter_layers", 4000);
+        activity.finish();
+        ImageStore.draftSubjectFile(context).delete();
+    }
+
     @Test
     public void widgetSetup() throws Exception {
         Intent extras = new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, 4242);

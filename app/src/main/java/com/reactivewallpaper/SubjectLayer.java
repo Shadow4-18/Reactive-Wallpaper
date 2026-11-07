@@ -6,41 +6,51 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 
 /**
- * The picture's subject (a person, a character, an object) cut out so it can
- * be drawn in front of the effects. Built from a painted or detected subject
- * mask: 255 = subject, 0 = background, any size (it is stretched over the image).
+ * The picture's subjects (people, characters, objects) cut out so they can be
+ * drawn in front of the effects. Built from a painted or detected subject
+ * mask, any size (it is stretched over the image): a gray mask is one subject
+ * (255 = subject); a colored one holds up to three, one in each of its red,
+ * green and blue channels, each drawn as its own layer with its own depth.
  *
- * <p>Holds three bitmaps, all at the image's size or smaller:
- * <ul>
- *   <li>the cutout: the image with the subject opaque and everything else clear;</li>
- *   <li>the plate: the image with the subject filled in from its surroundings,
- *       drawn behind when the subject moves with its own depth (so no ghost of it
- *       shows where it was);</li>
- *   <li>the aura: a small, very soft silhouette for a light glowing behind it.</li>
- * </ul>
+ * <p>Each part has a cutout (the image with that subject opaque and the rest
+ * clear) and an aura (a small, very soft silhouette for a light behind it).
+ * One plate, the image with every subject filled in from its surroundings,
+ * is drawn behind when they move with their own depth, so no ghost shows.
  */
 final class SubjectLayer {
     /** The long side the mask is worked on at; plenty for soft edges. */
     private static final int WORK_SIDE = 384;
     private static final int AURA_SIDE = 72;
+    static final int MAX_PARTS = 3;
 
-    final Bitmap cutout;
-    final Bitmap plate;
-    /** White with the silhouette as alpha; tinted when drawn. */
-    final Bitmap aura;
-    /** The subject's center, as a fraction of the image (for scaling it about itself). */
-    final float centerX;
-    final float centerY;
+    static final class Part {
+        final Bitmap cutout;
+        /** White with the silhouette as alpha; tinted when drawn. */
+        final Bitmap aura;
+        /** The subject's center, as a fraction of the image (for scaling it about itself). */
+        final float centerX;
+        final float centerY;
+        /** How much of the depth effect this subject gets: nearer subjects move more. */
+        float depth = 1f;
 
-    private SubjectLayer(Bitmap cutout, Bitmap plate, Bitmap aura, float centerX, float centerY) {
-        this.cutout = cutout;
-        this.plate = plate;
-        this.aura = aura;
-        this.centerX = centerX;
-        this.centerY = centerY;
+        Part(Bitmap cutout, Bitmap aura, float centerX, float centerY) {
+            this.cutout = cutout;
+            this.aura = aura;
+            this.centerX = centerX;
+            this.centerY = centerY;
+        }
     }
 
-    /** Builds the layer, or returns null when the mask marks (almost) nothing. */
+    /** Back to front: draw in this order. */
+    final Part[] parts;
+    final Bitmap plate;
+
+    private SubjectLayer(Part[] parts, Bitmap plate) {
+        this.parts = parts;
+        this.plate = plate;
+    }
+
+    /** Builds the layers, or returns null when the mask marks (almost) nothing. */
     static SubjectLayer build(Bitmap image, Bitmap subjectMask) {
         if (image == null || subjectMask == null || image.isRecycled() || subjectMask.isRecycled()) {
             return null;
@@ -48,63 +58,109 @@ final class SubjectLayer {
         float longSide = Math.max(image.getWidth(), image.getHeight());
         int mw = Math.max(1, Math.round(image.getWidth() * WORK_SIDE / longSide));
         int mh = Math.max(1, Math.round(image.getHeight() * WORK_SIDE / longSide));
-        float[] m = readMask(subjectMask, mw, mh);
-
-        // Where is it, and is there anything there at all?
-        double sum = 0;
-        double sx = 0;
-        double sy = 0;
-        for (int y = 0; y < mh; y++) {
-            for (int x = 0; x < mw; x++) {
-                float v = m[y * mw + x];
-                sum += v;
-                sx += v * x;
-                sy += v * y;
+        java.util.List<float[]> grids = readMasks(subjectMask, mw, mh);
+        java.util.List<Part> parts = new java.util.ArrayList<>();
+        java.util.List<Float> bottoms = new java.util.ArrayList<>();
+        float[] union = new float[mw * mh];
+        for (float[] m : grids) {
+            // Where is it, and is there anything there at all?
+            double sum = 0;
+            double sx = 0;
+            double sy = 0;
+            int lowest = 0;
+            for (int y = 0; y < mh; y++) {
+                for (int x = 0; x < mw; x++) {
+                    float v = m[y * mw + x];
+                    sum += v;
+                    sx += v * x;
+                    sy += v * y;
+                    if (v > 0.5f) {
+                        lowest = y;
+                    }
+                }
             }
+            if (sum < mw * mh * 0.002) {
+                continue;
+            }
+            for (int i = 0; i < union.length; i++) {
+                union[i] = Math.max(union[i], m[i]);
+            }
+            float cx = (float) (sx / sum + 0.5) / mw;
+            float cy = (float) (sy / sum + 0.5) / mh;
+            // A one-pixel feather keeps the cut edge from looking jagged once scaled up.
+            float[] edge = blur(m, mw, mh, 1, 1);
+            Bitmap cutout = image.copy(Bitmap.Config.ARGB_8888, true);
+            multiplyAlpha(cutout, edge, mw, mh);
+            float[] soft = blur(scale(m, mw, mh, AURA_SIDE), auraW(mw, mh), auraH(mw, mh), 3, 3);
+            Bitmap aura = alphaBitmap(soft, auraW(mw, mh), auraH(mw, mh));
+            parts.add(new Part(cutout, aura, cx, cy));
+            bottoms.add(lowest / (float) mh);
         }
-        if (sum < mw * mh * 0.002) {
+        if (parts.isEmpty()) {
             return null;
         }
-        float cx = (float) (sx / sum + 0.5) / mw;
-        float cy = (float) (sy / sum + 0.5) / mh;
-
-        // A one-pixel feather keeps the cut edge from looking jagged once scaled up.
-        float[] edge = blur(m, mw, mh, 1, 1);
-        Bitmap cutout = image.copy(Bitmap.Config.ARGB_8888, true);
-        multiplyAlpha(cutout, edge, mw, mh);
-
-        // The plate: fill the subject (grown a little, to swallow its outline) with
+        // Whoever stands lower in the picture is nearer: drawn last and moved most.
+        Integer[] order = new Integer[parts.size()];
+        for (int i = 0; i < order.length; i++) {
+            order[i] = i;
+        }
+        java.util.Arrays.sort(order, (x, y) -> Float.compare(bottoms.get(x), bottoms.get(y)));
+        Part[] sorted = new Part[order.length];
+        for (int rank = 0; rank < order.length; rank++) {
+            Part p = parts.get(order[rank]);
+            p.depth = order.length == 1 ? 1f : 0.35f + 0.65f * rank / (order.length - 1);
+            sorted[rank] = p;
+        }
+        // The plate: fill every subject (grown a little, to swallow its outline) with
         // the surrounding colors, spread inward by a normalized blur.
-        float[] grown = blur(dilate(m, mw, mh, 4), mw, mh, 2, 2);
+        float[] grown = blur(dilate(union, mw, mh, 4), mw, mh, 2, 2);
         Bitmap plate = fillPlate(image, grown, mw, mh);
-
-        float[] soft = blur(scale(m, mw, mh, AURA_SIDE), auraW(mw, mh), auraH(mw, mh), 3, 3);
-        Bitmap aura = alphaBitmap(soft, auraW(mw, mh), auraH(mw, mh));
-        return new SubjectLayer(cutout, plate, aura, cx, cy);
+        return new SubjectLayer(sorted, plate);
     }
 
     void release() {
-        cutout.recycle();
+        for (Part p : parts) {
+            p.cutout.recycle();
+            p.aura.recycle();
+        }
         plate.recycle();
-        aura.recycle();
     }
 
     // ---- mask helpers (plain float grids, 0..1) ----
 
-    private static float[] readMask(Bitmap mask, int w, int h) {
+    /**
+     * The subjects in a mask: one grid for a gray mask, else one per color
+     * channel (red, green, blue). A transparent pixel counts as background.
+     */
+    static java.util.List<float[]> readMasks(Bitmap mask, int w, int h) {
         Bitmap small = Bitmap.createScaledBitmap(mask, w, h, true);
         int[] px = new int[w * h];
         small.getPixels(px, 0, w, 0, 0, w, h);
         if (small != mask) {
             small.recycle();
         }
-        float[] out = new float[w * h];
-        for (int i = 0; i < px.length; i++) {
-            // Gray masks: the red channel; a transparent pixel counts as background.
-            int a = px[i] >>> 24;
-            out[i] = ((px[i] >> 16) & 0xFF) * a / (255f * 255f);
+        boolean gray = true;
+        for (int p : px) {
+            int r = (p >> 16) & 0xFF;
+            int g = (p >> 8) & 0xFF;
+            int b = p & 0xFF;
+            if (Math.abs(r - g) > 3 || Math.abs(g - b) > 3) {
+                gray = false;
+                break;
+            }
         }
-        return out;
+        java.util.List<float[]> grids = new java.util.ArrayList<>();
+        int channels = gray ? 1 : MAX_PARTS;
+        for (int c = 0; c < channels; c++) {
+            int shift = 16 - 8 * c;
+            float[] out = new float[w * h];
+            for (int i = 0; i < px.length; i++) {
+                int a = px[i] >>> 24;
+                out[i] = ((px[i] >> shift) & 0xFF) * a / (255f * 255f);
+            }
+            grids.add(out);
+        }
+        return grids;
     }
 
     private static int auraW(int w, int h) {

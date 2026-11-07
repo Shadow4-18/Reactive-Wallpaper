@@ -48,6 +48,8 @@ public class GlowPaintActivity extends Activity {
     private static final int MASK_LONG_SIDE = 512;
     private static final int MAX_UNDO = 15;
 
+    /** Overlay colors for subject layers 1-3: purple, orange, green. */
+    private static final int[] LAYER_COLORS = {0xFFAA5AFF, 0xFFFF9628, 0xFF3CDC78};
     private static final int MODE_GLOW = 0;
     private static final int MODE_NO_GLOW = 1;
     private static final int MODE_AUTO = 2;
@@ -135,6 +137,30 @@ public class GlowPaintActivity extends Activity {
             }
         });
         tools.addView(modes);
+        if (subjectMode) {
+            // Up to three subjects, each its own layer with its own depth.
+            RadioGroup layerChoice = new RadioGroup(this);
+            layerChoice.setOrientation(RadioGroup.HORIZONTAL);
+            int[] layerIds = new int[SubjectLayer.MAX_PARTS];
+            for (int i = 0; i < layerIds.length; i++) {
+                RadioButton b = new RadioButton(this);
+                layerIds[i] = View.generateViewId();
+                b.setId(layerIds[i]);
+                b.setText("Subject " + (i + 1));
+                b.setTextColor(LAYER_COLORS[i]);
+                b.setMinHeight(dp(44));
+                layerChoice.addView(b, new RadioGroup.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            }
+            layerChoice.check(layerIds[0]);
+            layerChoice.setOnCheckedChangeListener((g, checked) -> {
+                for (int i = 0; i < layerIds.length; i++) {
+                    if (layerIds[i] == checked) {
+                        paintView.setLayer(i);
+                    }
+                }
+            });
+            tools.addView(layerChoice);
+        }
 
         LinearLayout brushRow = new LinearLayout(this);
         brushRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -225,15 +251,20 @@ public class GlowPaintActivity extends Activity {
             }
             Bitmap glow = subjectMode ? null : LivingImage.glowPreview(image, mask, imageHues, coverage,
                     image.getWidth() / 2, image.getHeight() / 2);
+            // A subject mask may hold several subjects, one per color channel.
+            Bitmap[] layers = subjectMode ? splitLayers(mask) : null;
             mainHandler.post(() -> {
                 if (isDestroyed()) {
                     return;
                 }
                 hues = imageHues;
-                paintView.setContent(image, mask, glow);
+                paintView.setContent(image, layers != null ? layers[0] : mask, glow);
+                if (layers != null) {
+                    paintView.setLayers(layers);
+                }
                 status.setText(subjectMode
-                        ? "Paint over the subject, or tap Auto-detect. It's drawn in front of the effects. "
-                                + "Pinch to zoom."
+                        ? "Paint over the subject, or tap Auto-detect. It's drawn in front of the effects; "
+                                + "use Subject 2 and 3 for more people or objects at other depths. Pinch to zoom."
                         : "Paint over parts that should glow (or shouldn't). Pinch to zoom.");
             });
         });
@@ -269,7 +300,8 @@ public class GlowPaintActivity extends Activity {
             }
             paintView.replaceMask(found);
             found.recycle();
-            status.setText("Found it. Touch up the edges with Subject and Erase if needed.");
+            status.setText("Found it. Several people or objects each get their own layer (Subject 1-3), "
+                    + "which move with their own depth. Touch up with Subject and Erase if needed.");
         });
     }
 
@@ -297,10 +329,12 @@ public class GlowPaintActivity extends Activity {
             return;
         }
         saving = true;
-        Bitmap maskCopy = paintView.mask.copy(Bitmap.Config.ARGB_8888, false);
+        Bitmap maskCopy = subjectMode && paintView.layers != null
+                ? composeLayers(paintView.layers) : paintView.mask.copy(Bitmap.Config.ARGB_8888, false);
         executor.execute(() -> {
             // An untouched mask is the same as no mask at all.
-            boolean ok = ImageStore.saveMask(isBlank(maskCopy, blank()) ? null : maskCopy, maskFile());
+            boolean blankMask = maskCopy == null || isBlank(maskCopy, blank());
+            boolean ok = ImageStore.saveMask(blankMask ? null : maskCopy, maskFile());
             mainHandler.post(() -> {
                 if (ok) {
                     setResult(RESULT_OK);
@@ -312,6 +346,55 @@ public class GlowPaintActivity extends Activity {
                 }
             });
         });
+    }
+
+    /** A subject mask's subjects as gray layers (the first holds a single-subject mask). */
+    private static Bitmap[] splitLayers(Bitmap mask) {
+        int w = mask.getWidth();
+        int h = mask.getHeight();
+        java.util.List<float[]> grids = SubjectLayer.readMasks(mask, w, h);
+        Bitmap[] layers = new Bitmap[SubjectLayer.MAX_PARTS];
+        for (int i = 0; i < layers.length; i++) {
+            int[] px = new int[w * h];
+            float[] g = i < grids.size() ? grids.get(i) : null;
+            for (int k = 0; k < px.length; k++) {
+                int v = g == null ? 0 : Math.round(g[k] * 255f);
+                px[k] = 0xFF000000 | (v << 16) | (v << 8) | v;
+            }
+            layers[i] = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888).copy(Bitmap.Config.ARGB_8888, true);
+        }
+        return layers;
+    }
+
+    /**
+     * The layers as one mask: gray when only the first is used (as single-subject
+     * masks always were), else a subject per color channel; null when all are empty.
+     */
+    private static Bitmap composeLayers(Bitmap[] layers) {
+        int w = layers[0].getWidth();
+        int h = layers[0].getHeight();
+        int[][] px = new int[layers.length][w * h];
+        boolean[] used = new boolean[layers.length];
+        for (int i = 0; i < layers.length; i++) {
+            layers[i].getPixels(px[i], 0, w, 0, 0, w, h);
+            for (int p : px[i]) {
+                if ((p & 0xFF) > 4) {
+                    used[i] = true;
+                    break;
+                }
+            }
+        }
+        if (!used[0] && !used[1] && !used[2]) {
+            return null;
+        }
+        if (!used[1] && !used[2]) {
+            return layers[0].copy(Bitmap.Config.ARGB_8888, false);
+        }
+        int[] out = new int[w * h];
+        for (int k = 0; k < out.length; k++) {
+            out[k] = 0xFF000000 | ((px[0][k] & 0xFF) << 16) | ((px[1][k] & 0xFF) << 8) | (px[2][k] & 0xFF);
+        }
+        return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888);
     }
 
     private static boolean isBlank(Bitmap mask, int blank) {
@@ -345,6 +428,9 @@ public class GlowPaintActivity extends Activity {
         private Bitmap image;
         private Bitmap mask;
         private Bitmap overlay;
+        /** Subject mode: one gray mask per subject; {@link #mask} is the active one. */
+        private Bitmap[] layers;
+        private int activeLayer;
         private Bitmap glow;
         private Canvas maskCanvas;
         private Canvas overlayCanvas;
@@ -411,6 +497,27 @@ public class GlowPaintActivity extends Activity {
             invalidate();
         }
 
+        /** Subject mode: the subjects' layers; the brush paints the chosen one. */
+        void setLayers(Bitmap[] all) {
+            layers = all;
+            setLayer(0);
+        }
+
+        void setLayer(int index) {
+            if (layers == null) {
+                return;
+            }
+            activeLayer = index;
+            mask = layers[index];
+            maskCanvas = new Canvas(mask);
+            // Undo steps belong to a layer; switching starts afresh.
+            while (!undoStack.isEmpty()) {
+                undoStack.pop()[0].recycle();
+            }
+            rebuildOverlay();
+            invalidate();
+        }
+
         void setGlow(Bitmap newGlow) {
             if (glow != null) {
                 glow.recycle();
@@ -442,6 +549,11 @@ public class GlowPaintActivity extends Activity {
             }
             pushUndo();
             mask.eraseColor(Color.rgb(blank(), blank(), blank()));
+            if (layers != null) {
+                for (Bitmap layer : layers) {
+                    layer.eraseColor(Color.BLACK);
+                }
+            }
             rebuildOverlay();
             invalidate();
             refreshGlow();
@@ -450,6 +562,17 @@ public class GlowPaintActivity extends Activity {
         /** Replaces the whole painting with {@code next} (stretched to fit); undoable. */
         void replaceMask(Bitmap next) {
             if (mask == null) {
+                return;
+            }
+            if (layers != null) {
+                // Detected subjects, each into its own layer.
+                Bitmap scaled = Bitmap.createScaledBitmap(next, mask.getWidth(), mask.getHeight(), true);
+                Bitmap[] split = splitLayers(scaled);
+                for (int i = 0; i < layers.length; i++) {
+                    new Canvas(layers[i]).drawBitmap(split[i], 0, 0, null);
+                    split[i].recycle();
+                }
+                setLayer(0);
                 return;
             }
             pushUndo();
@@ -472,6 +595,27 @@ public class GlowPaintActivity extends Activity {
             int w = mask.getWidth();
             int h = mask.getHeight();
             int[] px = new int[w * h];
+            if (layers != null) {
+                // Every subject in its own color; where they overlap, the strongest shows.
+                int[][] all = new int[layers.length][w * h];
+                for (int i = 0; i < layers.length; i++) {
+                    layers[i].getPixels(all[i], 0, w, 0, 0, w, h);
+                }
+                for (int k = 0; k < px.length; k++) {
+                    int best = 0;
+                    int value = 0;
+                    for (int i = 0; i < layers.length; i++) {
+                        int v = all[i][k] & 0xFF;
+                        if (v > value) {
+                            value = v;
+                            best = i;
+                        }
+                    }
+                    px[k] = layerColor(best, value);
+                }
+                overlay.setPixels(px, 0, w, 0, 0, w, h);
+                return;
+            }
             mask.getPixels(px, 0, w, 0, 0, w, h);
             for (int i = 0; i < px.length; i++) {
                 px[i] = overlayColor(px[i] & 0xFF);
@@ -479,7 +623,14 @@ public class GlowPaintActivity extends Activity {
             overlay.setPixels(px, 0, w, 0, 0, w, h);
         }
 
+        private int layerColor(int layer, int value) {
+            return (LAYER_COLORS[layer] & 0x00FFFFFF) | ((value * 130 / 255) << 24);
+        }
+
         private int overlayColor(int value) {
+            if (layers != null) {
+                return layerColor(activeLayer, value);
+            }
             if (subjectMode) {
                 // Soft detected edges show as fainter purple.
                 return Color.argb(value * 130 / 255, 170, 90, 255);

@@ -388,11 +388,18 @@ final class WallpaperRenderer {
      * the viewer on bass, so it reads as standing in front.
      */
     private void drawSubject(Canvas canvas, WallpaperSettings s, float bass) {
+        // Back to front; each subject moves by its own share of the depth.
+        for (SubjectLayer.Part part : subject.parts) {
+            drawSubjectPart(canvas, s, bass, part);
+        }
+    }
+
+    private void drawSubjectPart(Canvas canvas, WallpaperSettings s, float bass, SubjectLayer.Part part) {
         int bw = image.getWidth();
         int bh = image.getHeight();
-        float depth = s.subjectDepth;
-        point[0] = subject.centerX * bw;
-        point[1] = subject.centerY * bh;
+        float depth = s.subjectDepth * part.depth;
+        point[0] = part.centerX * bw;
+        point[1] = part.centerY * bh;
         matrix.mapPoints(point);
         subjectMatrix.set(matrix);
         float pop = 1f + depth * 0.045f * bass;
@@ -402,7 +409,7 @@ final class WallpaperRenderer {
         subjectMatrix.postTranslate(parallaxX * depth * 0.9f + floatX, parallaxY * depth * 0.9f + floatY);
 
         if (s.subjectAura > 0f) {
-            Bitmap aura = subject.aura;
+            Bitmap aura = part.aura;
             auraMatrix.set(subjectMatrix);
             auraMatrix.preScale(bw / (float) aura.getWidth(), bh / (float) aura.getHeight());
             float grow = 1.06f + 0.08f * bass;
@@ -416,7 +423,7 @@ final class WallpaperRenderer {
             auraPaint.setAlpha((int) (255 * Math.min(1f, s.subjectAura * (0.3f + 0.9f * bass))));
             canvas.drawBitmap(aura, auraMatrix, auraPaint);
         }
-        canvas.drawBitmap(subject.cutout, subjectMatrix, imagePaint);
+        canvas.drawBitmap(part.cutout, subjectMatrix, imagePaint);
     }
 
     private void drawBackground(Canvas canvas, int w, int h, WallpaperSettings s, float bass, float beat) {
