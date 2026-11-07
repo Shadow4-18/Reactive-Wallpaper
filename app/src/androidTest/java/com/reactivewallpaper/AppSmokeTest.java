@@ -186,4 +186,22 @@ public class AppSmokeTest {
             SystemClock.sleep(2000);
         }
     }
+
+    /** A look message shared to Resona from another app opens the "Add it?" prompt. */
+    @Test
+    public void receivesASharedLookMessage() throws Exception {
+        WallpaperSettings look = new WallpaperSettings();
+        look.style = WallpaperSettings.STYLE_ORB;
+        String message = "My Resona wallpaper look. To add it, copy this message.\n"
+                + LookCode.encode("Friend's look", look);
+        Intent intent = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, message)
+                .setClassName(context, MainActivity.class.getName())
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        context.startActivity(intent);
+        shot("12_shared_look_prompt", 5000);
+        instrumentation.getUiAutomation().performGlobalAction(
+                android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK);
+        SystemClock.sleep(1000);
+    }
 }

@@ -113,16 +113,21 @@ final class LooksUi {
         shareRow.addView(importLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         shareRow.addView(exportLooks, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         looks.addView(shareRow);
-        LinearLayout qrRow = new LinearLayout(activity);
         Button shareCurrent = new Button(activity);
-        shareCurrent.setText("Share this look");
+        shareCurrent.setText("Share this look (QR code or link)");
         shareCurrent.setOnClickListener(v -> LookShare.show(activity, "My Resona look", host.settings()));
+        looks.addView(shareCurrent, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout receiveRow = new LinearLayout(activity);
         Button scan = new Button(activity);
         scan.setText("Scan a look");
         scan.setOnClickListener(v -> LookShare.scan(activity, look -> LookShare.offer(activity, look, this::refresh)));
-        qrRow.addView(shareCurrent, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        qrRow.addView(scan, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        looks.addView(qrRow);
+        Button paste = new Button(activity);
+        paste.setText("Paste a look");
+        paste.setOnClickListener(v -> LookShare.paste(activity, look -> LookShare.offer(activity, look, this::refresh)));
+        receiveRow.addView(scan, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        receiveRow.addView(paste, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        looks.addView(receiveRow);
         refresh();
     }
 

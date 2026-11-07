@@ -66,12 +66,31 @@ final class LookShare {
                 .setPositiveButton("Send as link", (d, w) -> {
                     Intent send = new Intent(Intent.ACTION_SEND)
                             .setType("text/plain")
-                            .putExtra(Intent.EXTRA_TEXT, "My Resona wallpaper look “" + name
-                                    + "”. Open this on a phone with Resona:\n" + code);
+                            .putExtra(Intent.EXTRA_TEXT, "My Resona wallpaper look “" + name + "”.\n"
+                                    + "To add it: copy this message, then in Resona open Looks > Paste a look "
+                                    + "(or share this message to Resona).\n" + code);
                     activity.startActivity(Intent.createChooser(send, "Share look"));
                 })
                 .setNegativeButton("Close", null)
                 .show();
+    }
+
+    /** Reads a look from whatever was last copied (a whole message is fine). */
+    static void paste(Activity activity, Consumer<LookCode.Look> onLook) {
+        android.content.ClipboardManager clipboard =
+                (android.content.ClipboardManager) activity.getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+        CharSequence text = null;
+        if (clipboard != null && clipboard.hasPrimaryClip() && clipboard.getPrimaryClip() != null
+                && clipboard.getPrimaryClip().getItemCount() > 0) {
+            text = clipboard.getPrimaryClip().getItemAt(0).coerceToText(activity);
+        }
+        LookCode.Look look = text != null ? LookCode.decode(text.toString()) : null;
+        if (look == null) {
+            Toast.makeText(activity, "Copy a Resona look message or link first, then tap Paste a look.",
+                    Toast.LENGTH_LONG).show();
+        } else {
+            onLook.accept(look);
+        }
     }
 
     /** Opens Google's code scanner and hands back a look if one is scanned. */

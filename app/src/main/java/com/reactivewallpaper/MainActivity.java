@@ -1428,16 +1428,28 @@ public class MainActivity extends Activity {
         handleLookLink(intent);
     }
 
-    /** A tapped resona://look/... link: offer to add the shared look. */
+    /**
+     * A tapped resona://look/... link, or a message shared to Resona from
+     * another app: offer to add the look in it.
+     */
     private void handleLookLink(Intent intent) {
-        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) {
+        if (intent == null) {
             return;
         }
-        LookCode.Look look = LookCode.decode(intent.getData().toString());
+        String text;
+        if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
+            text = intent.getData().toString();
+        } else if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            CharSequence shared = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+            text = shared != null ? shared.toString() : "";
+        } else {
+            return;
+        }
+        LookCode.Look look = LookCode.decode(text);
         // Handled once, even if the screen is recreated.
         intent.setAction(null);
         if (look == null) {
-            Toast.makeText(this, "That link isn't a Resona look, or it got cut off.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "That isn't a Resona look, or the link got cut off.", Toast.LENGTH_LONG).show();
             return;
         }
         mainHandler.post(() -> LookShare.offer(this, look, () -> looksUi.refresh()));

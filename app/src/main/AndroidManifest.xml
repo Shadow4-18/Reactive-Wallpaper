@@ -40,6 +40,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="resona" android:host="look" />
             </intent-filter>
+            <!-- A shared look message sent to Resona from any app's Share menu. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <activity
