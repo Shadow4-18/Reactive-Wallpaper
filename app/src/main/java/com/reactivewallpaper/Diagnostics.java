@@ -159,6 +159,7 @@ final class Diagnostics {
         BitmapFactory.decodeFile(p.image.getPath(), bounds);
         line(r, label + ": " + bounds.outWidth + "x" + bounds.outHeight + " " + bounds.outMimeType
                 + ", " + p.image.length() / 1024 + " KB, painted glow " + (p.mask.length() > 0)
+                + ", subject " + (p.subject.length() > 0)
                 + ", video/animation " + (p.media.length() > 0 ? p.media.length() / 1024 + " KB" : "none"));
     }
 

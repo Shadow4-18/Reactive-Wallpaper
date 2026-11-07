@@ -23,6 +23,8 @@ final class ImageStore {
     private static final String DRAFT_FILE_NAME = "editor_image";
     private static final String MASK_FILE_NAME = "wallpaper_mask.png";
     private static final String DRAFT_MASK_FILE_NAME = "editor_mask.png";
+    private static final String SUBJECT_FILE_NAME = "wallpaper_subject.png";
+    private static final String DRAFT_SUBJECT_FILE_NAME = "editor_subject.png";
     private static final String MEDIA_FILE_NAME = "wallpaper_media";
     private static final String DRAFT_MEDIA_FILE_NAME = "editor_media";
 
@@ -35,11 +37,14 @@ final class ImageStore {
         final File image;
         final File mask;
         final File media;
+        /** The subject mask (255 = subject), for drawing it in front of the effects. */
+        final File subject;
 
-        Picture(File image, File mask, File media) {
+        Picture(File image, File mask, File media, File subject) {
             this.image = image;
             this.mask = mask;
             this.media = media;
+            this.subject = subject;
         }
 
         boolean hasImage() {
@@ -48,19 +53,21 @@ final class ImageStore {
 
         /** Changes whenever any of the files does, for spotting a reload. */
         String stamp() {
-            return image.getPath() + ":" + image.lastModified() + ":" + mask.lastModified() + ":" + media.lastModified();
+            return image.getPath() + ":" + image.lastModified() + ":" + mask.lastModified() + ":" + media.lastModified()
+                    + ":" + subject.lastModified();
         }
     }
 
     /** The background the wallpaper shows. */
     static Picture live(Context context) {
-        return new Picture(file(context), maskFile(context), new File(context.getFilesDir(), MEDIA_FILE_NAME));
+        return new Picture(file(context), maskFile(context), new File(context.getFilesDir(), MEDIA_FILE_NAME),
+                new File(context.getFilesDir(), SUBJECT_FILE_NAME));
     }
 
     /** The background being edited. */
     static Picture draft(Context context) {
         return new Picture(draftFile(context), draftMaskFile(context),
-                new File(context.getFilesDir(), DRAFT_MEDIA_FILE_NAME));
+                new File(context.getFilesDir(), DRAFT_MEDIA_FILE_NAME), draftSubjectFile(context));
     }
 
     /** Copies all parts of a background; a missing part removes the target's. Call off the main thread. */
@@ -68,6 +75,7 @@ final class ImageStore {
         copyOrDelete(from.image, to.image);
         copyOrDelete(from.mask, to.mask);
         copyOrDelete(from.media, to.media);
+        copyOrDelete(from.subject, to.subject);
     }
 
     private static void copyOrDelete(File from, File to) {
@@ -97,6 +105,11 @@ final class ImageStore {
 
     static File draftMaskFile(Context context) {
         return new File(context.getFilesDir(), DRAFT_MASK_FILE_NAME);
+    }
+
+    /** The subject mask for the draft image; absent means "no subject in front". */
+    static File draftSubjectFile(Context context) {
+        return new File(context.getFilesDir(), DRAFT_SUBJECT_FILE_NAME);
     }
 
     static Bitmap loadMask(File f) {

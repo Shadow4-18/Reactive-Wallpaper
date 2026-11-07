@@ -58,6 +58,12 @@ final class WallpaperRenderer {
     private float glowFilterHue = Float.NaN;
     private ColorMatrixColorFilter mediaGlowFilter;
     private LivingImage living;
+    /** The picture's subject, drawn in front of the effects; null when none is marked. */
+    private SubjectLayer subject;
+    private final Matrix subjectMatrix = new Matrix();
+    private final Matrix auraMatrix = new Matrix();
+    private final Paint auraPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final float[] point = new float[2];
     private float[] accentHues = DEFAULT_HUES;
     private float time;
     private float swayPhase;
@@ -104,6 +110,8 @@ final class WallpaperRenderer {
             backdrop.recycle();
             backdrop = null;
         }
+        // A subject belongs to the picture it was cut from.
+        setSubject(null);
         image = bitmap;
         mask = glowMask;
         accentHues = bitmap != null ? ImageStore.accentHues(bitmap) : DEFAULT_HUES;
@@ -116,6 +124,17 @@ final class WallpaperRenderer {
         if (bitmap != null) {
             living = new LivingImage(bitmap, mask, accentHues, WallpaperSettings.DEFAULT_COVERAGE);
         }
+    }
+
+    /**
+     * The subject cut from the current image (see {@link SubjectLayer#build}),
+     * or null. Takes ownership. Call after {@link #setImage}.
+     */
+    void setSubject(SubjectLayer layer) {
+        if (subject != null && subject != layer) {
+            subject.release();
+        }
+        subject = layer;
     }
 
     void release() {
@@ -246,13 +265,6 @@ final class WallpaperRenderer {
             taps.draw(canvas, dt, density);
         }
 
-        if (s.flash > 0f && beat > 0.01f) {
-            fillPaint.setShader(null);
-            fillPaint.setColor(blend(Color.WHITE, colorAt(s, 0.5f), 0.5f));
-            fillPaint.setAlpha((int) (255 * Math.min(0.6f, beat * 0.3f * s.flash)));
-            canvas.drawRect(0, 0, w, h, fillPaint);
-        }
-
         switch (s.style) {
             case WallpaperSettings.STYLE_BARS:
                 drawBars(canvas, w, h, audio.bands(), s);
@@ -270,6 +282,57 @@ final class WallpaperRenderer {
             default:
                 break;
         }
+
+        if (subjectShown(s)) {
+            drawSubject(canvas, s, bass);
+        }
+
+        // The flash lights everything, the subject included.
+        if (s.flash > 0f && beat > 0.01f) {
+            fillPaint.setShader(null);
+            fillPaint.setColor(blend(Color.WHITE, colorAt(s, 0.5f), 0.5f));
+            fillPaint.setAlpha((int) (255 * Math.min(0.6f, beat * 0.3f * s.flash)));
+            canvas.drawRect(0, 0, w, h, fillPaint);
+        }
+    }
+
+    /** Only still pictures have a subject to lift out; videos and GIFs move on their own. */
+    private boolean subjectShown(WallpaperSettings s) {
+        return subject != null && s.subjectFront && mediaFrame == null && image != null;
+    }
+
+    /**
+     * Draws the subject over everything drawn so far: a soft colored light
+     * behind it that swells with the bass, then the cut-out itself, which moves
+     * a little more than the background with tilt and sway and steps toward
+     * the viewer on bass, so it reads as standing in front.
+     */
+    private void drawSubject(Canvas canvas, WallpaperSettings s, float bass) {
+        int bw = image.getWidth();
+        int bh = image.getHeight();
+        float depth = s.subjectDepth;
+        point[0] = subject.centerX * bw;
+        point[1] = subject.centerY * bh;
+        matrix.mapPoints(point);
+        subjectMatrix.set(matrix);
+        float pop = 1f + depth * 0.045f * bass;
+        subjectMatrix.postScale(pop, pop, point[0], point[1]);
+        float floatX = (float) Math.sin(swayPhase * 0.31f) * 3f * density * depth * s.sway;
+        float floatY = (float) Math.cos(swayPhase * 0.23f) * 2f * density * depth * s.sway;
+        subjectMatrix.postTranslate(parallaxX * depth * 0.9f + floatX, parallaxY * depth * 0.9f + floatY);
+
+        if (s.subjectAura > 0f) {
+            Bitmap aura = subject.aura;
+            auraMatrix.set(subjectMatrix);
+            auraMatrix.preScale(bw / (float) aura.getWidth(), bh / (float) aura.getHeight());
+            float grow = 1.06f + 0.08f * bass;
+            auraMatrix.postScale(grow, grow, point[0], point[1]);
+            auraPaint.setXfermode(ADD);
+            auraPaint.setColor(colorAt(s, 0.5f));
+            auraPaint.setAlpha((int) (255 * Math.min(1f, s.subjectAura * (0.3f + 0.9f * bass))));
+            canvas.drawBitmap(aura, auraMatrix, auraPaint);
+        }
+        canvas.drawBitmap(subject.cutout, subjectMatrix, imagePaint);
     }
 
     private void drawBackground(Canvas canvas, int w, int h, WallpaperSettings s, float bass, float beat) {
@@ -366,7 +429,9 @@ final class WallpaperRenderer {
             updateMediaMatrix();
             canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
         } else {
-            canvas.drawBitmap(image, matrix, imagePaint);
+            // When the subject moves apart from the background, show the background without it.
+            boolean lifted = subjectShown(s) && s.subjectDepth > 0.01f;
+            canvas.drawBitmap(lifted ? subject.plate : image, matrix, imagePaint);
         }
     }
 

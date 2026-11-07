@@ -115,6 +115,10 @@ final class PresetStore {
                     if (media.length() > 0) {
                         putFile(zip, "looks/" + i + "/media", media);
                     }
+                    File subject = picture(context, p.id).subject;
+                    if (subject.length() > 0) {
+                        putFile(zip, "looks/" + i + "/subject.png", subject);
+                    }
                 }
             }
             JSONObject manifest = new JSONObject();
@@ -203,6 +207,10 @@ final class PresetStore {
                     if (hasImage && isImage(mask)) {
                         ImageStore.copy(mask, maskFile(context, id));
                     }
+                    File subject = new File(work, i + ".subject");
+                    if (hasImage && isImage(subject)) {
+                        ImageStore.copy(subject, picture(context, id).subject);
+                    }
                     File media = new File(work, i + ".media");
                     if (!hasImage || settings.mediaType == WallpaperSettings.MEDIA_IMAGE || media.length() == 0
                             || !ImageStore.copy(media, picture(context, id).media)) {
@@ -246,6 +254,9 @@ final class PresetStore {
         }
         if (parts[2].equals("media")) {
             return new File(work, index + ".media");
+        }
+        if (parts[2].equals("subject.png")) {
+            return new File(work, index + ".subject");
         }
         return null;
     }
@@ -323,6 +334,7 @@ final class PresetStore {
         picture.image.delete();
         picture.mask.delete();
         picture.media.delete();
+        picture.subject.delete();
     }
 
     /**
@@ -361,7 +373,8 @@ final class PresetStore {
     /** A saved look's own background files. */
     static Picture picture(Context context, String id) {
         File image = imageFile(context, id);
-        return new Picture(image, maskFile(context, id), new File(image.getParentFile(), id + ".media"));
+        return new Picture(image, maskFile(context, id), new File(image.getParentFile(), id + ".media"),
+                new File(image.getParentFile(), id + ".subject.png"));
     }
 
     private static void replace(Context context, Preset old, Preset updated) {

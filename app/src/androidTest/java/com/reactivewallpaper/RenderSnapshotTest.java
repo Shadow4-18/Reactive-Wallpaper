@@ -29,6 +29,10 @@ public class RenderSnapshotTest {
 
     private final Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
     private long now;
+    /** When set, the next snapshot's picture gets this subject mask. */
+    private Bitmap subjectMask;
+    /** Phone tilt held during the next snapshot (-1..1). */
+    private float tiltX;
 
     @After
     public void restoreClock() {
@@ -48,8 +52,13 @@ public class RenderSnapshotTest {
         AudioAnalyzer analyzer = new AudioAnalyzer(s.barCount);
         s.applyTo(analyzer, false, false);
         WallpaperRenderer renderer = new WallpaperRenderer(DENSITY);
-        renderer.setImage(image.copy(Bitmap.Config.ARGB_8888, false), mask);
+        Bitmap copy = image.copy(Bitmap.Config.ARGB_8888, false);
+        renderer.setImage(copy, mask);
         renderer.setFramed(framed);
+        if (subjectMask != null) {
+            renderer.setSubject(SubjectLayer.build(copy, subjectMask));
+        }
+        renderer.setTilt(tiltX, 0f);
         Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
         Canvas canvas = new Canvas(out);
         Random random = new Random(11);
@@ -185,5 +194,52 @@ public class RenderSnapshotTest {
         p.setStrokeWidth(26);
         c.drawCircle(128, 330, 92, p);
         snap("31_painted_glow", image, mask, true, true, s -> s.style = WallpaperSettings.STYLE_NONE);
+    }
+
+    /** A mask of the dark figure in {@link TestScenes#neon}, as a painter would mark it. */
+    static Bitmap figureMask() {
+        Bitmap mask = Bitmap.createBitmap(300, 665, Bitmap.Config.ARGB_8888);
+        mask.eraseColor(0xFF000000);
+        Canvas c = new Canvas(mask);
+        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        p.setColor(0xFFFFFFFF);
+        c.drawCircle(150, 400.7f, 27, p);
+        c.drawRect(102, 424.7f, 198, 571.9f, p);
+        return mask;
+    }
+
+    @Test
+    public void subjectInFront() throws Exception {
+        Bitmap image = TestScenes.neon(1200, 2660);
+        subjectMask = figureMask();
+        try {
+            // Bars run behind the figure; strong particles and glow too.
+            snap("60_subject_front", image, true, s -> {
+                s.sparkleAmount = 1f;
+                s.subjectAura = 1f;
+                s.tiltParallax = 1f;
+            });
+            tiltX = 1f;
+            snap("61_subject_depth_tilted", image, true, s -> {
+                s.subjectDepth = 1f;
+                s.tiltParallax = 1f;
+            });
+            tiltX = 0f;
+            snap("62_subject_off", image, true, s -> s.subjectFront = false);
+            snap("63_subject_ring", image, true, s -> {
+                s.style = WallpaperSettings.STYLE_CIRCLE;
+                s.circleY = 0.58f;
+                s.circleSize = 0.36f;
+                s.subjectAura = 0.8f;
+            });
+            // The pieces themselves: the cut-out, and the background with the subject filled in.
+            SubjectLayer layer = SubjectLayer.build(image, subjectMask);
+            TestScenes.saveShot(context, "render_64_subject_cutout", layer.cutout);
+            TestScenes.saveShot(context, "render_65_subject_plate", layer.plate);
+            layer.release();
+        } finally {
+            subjectMask = null;
+            tiltX = 0f;
+        }
     }
 }

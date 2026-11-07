@@ -32,10 +32,12 @@ public class LooksRoundTripTest {
         Bitmap mask = Bitmap.createBitmap(64, 128, Bitmap.Config.ARGB_8888);
         mask.eraseColor(0xFFFFFFFF);
         ImageStore.saveMask(mask, draft.mask);
+        ImageStore.saveMask(RenderSnapshotTest.figureMask(), draft.subject);
 
         WallpaperSettings settings = new WallpaperSettings();
         settings.bassGlow = 2.4f;
         settings.particleStyle = WallpaperSettings.PARTICLE_EMBERS;
+        settings.subjectDepth = 0.8f;
         PresetStore.Preset saved = PresetStore.save(context, "Round trip", settings, true);
         List<PresetStore.Preset> one = new ArrayList<>();
         one.add(saved);
@@ -55,9 +57,12 @@ public class LooksRoundTripTest {
         ImageStore.Picture picture = PresetStore.picture(context, back.id);
         assertTrue(ImageStore.load(picture.image, 100, 100) != null);
         assertTrue(ImageStore.loadMask(picture.mask) != null);
+        Bitmap subject = ImageStore.loadMask(picture.subject);
+        assertTrue(subject != null && subject.getWidth() == 300);
         WallpaperSettings restored = PresetStore.fromJson(back.look);
         assertEquals(2.4f, restored.bassGlow, 0.001f);
         assertEquals(WallpaperSettings.PARTICLE_EMBERS, restored.particleStyle);
+        assertEquals(0.8f, restored.subjectDepth, 0.001f);
         PresetStore.delete(context, back);
     }
 }

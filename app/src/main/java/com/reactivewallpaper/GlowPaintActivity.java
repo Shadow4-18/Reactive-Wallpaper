@@ -37,9 +37,14 @@ import java.util.concurrent.Executors;
 /**
  * Lets the user paint which parts of the picture glow. The result is a gray
  * mask saved next to the draft image: 255 = always glow, 0 = never, 128 = auto.
+ *
+ * <p>With {@link #EXTRA_SUBJECT} it marks the picture's subject instead
+ * (255 = subject, 0 = not), which is drawn in front of the effects, and
+ * offers automatic detection.
  */
 public class GlowPaintActivity extends Activity {
     static final String EXTRA_COVERAGE = "coverage";
+    static final String EXTRA_SUBJECT = "subject";
     private static final int MASK_LONG_SIDE = 512;
     private static final int MAX_UNDO = 15;
 
@@ -56,11 +61,14 @@ public class GlowPaintActivity extends Activity {
     private int mode = MODE_GLOW;
     private float brushDp = 36f;
     private boolean saving;
+    private boolean subjectMode;
+    private boolean detecting;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         coverage = getIntent().getFloatExtra(EXTRA_COVERAGE, WallpaperSettings.DEFAULT_COVERAGE);
+        subjectMode = getIntent().getBooleanExtra(EXTRA_SUBJECT, false);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -77,7 +85,7 @@ public class GlowPaintActivity extends Activity {
         Button cancel = flatButton("Cancel");
         cancel.setOnClickListener(v -> finish());
         TextView title = new TextView(this);
-        title.setText("Paint the glow");
+        title.setText(subjectMode ? "Mark the subject" : "Paint the glow");
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
         title.setTextColor(getColor(R.color.text_primary));
         title.setGravity(Gravity.CENTER);
@@ -107,7 +115,7 @@ public class GlowPaintActivity extends Activity {
 
         RadioGroup modes = new RadioGroup(this);
         modes.setOrientation(RadioGroup.HORIZONTAL);
-        String[] labels = {"Glow", "No glow", "Auto"};
+        String[] labels = subjectMode ? new String[] {"Subject", "Erase"} : new String[] {"Glow", "No glow", "Auto"};
         int[] ids = new int[labels.length];
         for (int i = 0; i < labels.length; i++) {
             RadioButton b = new RadioButton(this);
@@ -157,16 +165,23 @@ public class GlowPaintActivity extends Activity {
 
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER_VERTICAL);
-        Switch showGlow = new Switch(this);
-        showGlow.setText("Show glow");
-        showGlow.setTextColor(getColor(R.color.text_primary));
-        showGlow.setChecked(true);
-        showGlow.setOnCheckedChangeListener((b, checked) -> paintView.setShowGlow(checked));
+        if (subjectMode) {
+            Button detect = flatButton("Auto-detect");
+            detect.setOnClickListener(v -> detect());
+            actions.addView(detect);
+            actions.addView(new View(this), new LinearLayout.LayoutParams(0, dp(48), 1f));
+        } else {
+            Switch showGlow = new Switch(this);
+            showGlow.setText("Show glow");
+            showGlow.setTextColor(getColor(R.color.text_primary));
+            showGlow.setChecked(true);
+            showGlow.setOnCheckedChangeListener((b, checked) -> paintView.setShowGlow(checked));
+            actions.addView(showGlow, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        }
         Button undo = flatButton("Undo");
         undo.setOnClickListener(v -> paintView.undo());
         Button clear = flatButton("Clear");
         clear.setOnClickListener(v -> paintView.clear());
-        actions.addView(showGlow, new LinearLayout.LayoutParams(0, dp(48), 1f));
         actions.addView(undo);
         actions.addView(clear);
         tools.addView(actions);
@@ -199,16 +214,16 @@ public class GlowPaintActivity extends Activity {
             int mw = Math.max(1, Math.round(image.getWidth() * MASK_LONG_SIDE / longSide));
             int mh = Math.max(1, Math.round(image.getHeight() * MASK_LONG_SIDE / longSide));
             Bitmap mask = Bitmap.createBitmap(mw, mh, Bitmap.Config.ARGB_8888);
-            Bitmap saved = ImageStore.loadMask(ImageStore.draftMaskFile(this));
+            Bitmap saved = ImageStore.loadMask(maskFile());
             Canvas c = new Canvas(mask);
             if (saved != null) {
                 c.drawBitmap(saved, null, new android.graphics.Rect(0, 0, mw, mh),
                         new Paint(Paint.FILTER_BITMAP_FLAG));
                 saved.recycle();
             } else {
-                c.drawColor(Color.rgb(LivingImage.MASK_AUTO, LivingImage.MASK_AUTO, LivingImage.MASK_AUTO));
+                c.drawColor(Color.rgb(blank(), blank(), blank()));
             }
-            Bitmap glow = LivingImage.glowPreview(image, mask, imageHues, coverage,
+            Bitmap glow = subjectMode ? null : LivingImage.glowPreview(image, mask, imageHues, coverage,
                     image.getWidth() / 2, image.getHeight() / 2);
             mainHandler.post(() -> {
                 if (isDestroyed()) {
@@ -216,13 +231,53 @@ public class GlowPaintActivity extends Activity {
                 }
                 hues = imageHues;
                 paintView.setContent(image, mask, glow);
-                status.setText("Paint over parts that should glow (or shouldn't). Pinch to zoom.");
+                status.setText(subjectMode
+                        ? "Paint over the subject, or tap Auto-detect. It's drawn in front of the effects. "
+                                + "Pinch to zoom."
+                        : "Paint over parts that should glow (or shouldn't). Pinch to zoom.");
             });
+        });
+    }
+
+    /** Where this painting is kept. */
+    private java.io.File maskFile() {
+        return subjectMode ? ImageStore.draftSubjectFile(this) : ImageStore.draftMaskFile(this);
+    }
+
+    /** The unpainted value: "auto" for glow, "not subject" for the subject. */
+    private int blank() {
+        return subjectMode ? 0 : LivingImage.MASK_AUTO;
+    }
+
+    private void detect() {
+        if (paintView.image == null || detecting) {
+            return;
+        }
+        detecting = true;
+        status.setText("Looking for the subject…");
+        SubjectDetector.detect(paintView.image, (found, error) -> {
+            detecting = false;
+            if (isDestroyed()) {
+                if (found != null) {
+                    found.recycle();
+                }
+                return;
+            }
+            if (found == null) {
+                status.setText(error);
+                return;
+            }
+            paintView.replaceMask(found);
+            found.recycle();
+            status.setText("Found it. Touch up the edges with Subject and Erase if needed.");
         });
     }
 
     /** Recomputes what glows after a change, off the main thread. */
     private void refreshGlow() {
+        if (subjectMode) {
+            return;
+        }
         Bitmap image = paintView.image;
         Bitmap maskCopy = paintView.mask.copy(Bitmap.Config.ARGB_8888, false);
         executor.execute(() -> {
@@ -245,27 +300,27 @@ public class GlowPaintActivity extends Activity {
         Bitmap maskCopy = paintView.mask.copy(Bitmap.Config.ARGB_8888, false);
         executor.execute(() -> {
             // An untouched mask is the same as no mask at all.
-            boolean ok = ImageStore.saveMask(isAllAuto(maskCopy) ? null : maskCopy,
-                    ImageStore.draftMaskFile(this));
+            boolean ok = ImageStore.saveMask(isBlank(maskCopy, blank()) ? null : maskCopy, maskFile());
             mainHandler.post(() -> {
                 if (ok) {
                     setResult(RESULT_OK);
                     finish();
                 } else {
                     saving = false;
-                    Toast.makeText(this, "Couldn't save the glow painting.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, subjectMode ? "Couldn't save the subject." : "Couldn't save the glow painting.",
+                            Toast.LENGTH_LONG).show();
                 }
             });
         });
     }
 
-    private static boolean isAllAuto(Bitmap mask) {
+    private static boolean isBlank(Bitmap mask, int blank) {
         int w = mask.getWidth();
         int[] row = new int[w];
         for (int y = 0; y < mask.getHeight(); y++) {
             mask.getPixels(row, 0, w, 0, y, w, 1);
             for (int p : row) {
-                if (Math.abs((p & 0xFF) - LivingImage.MASK_AUTO) > 4) {
+                if (Math.abs((p & 0xFF) - blank) > 4) {
                     return false;
                 }
             }
@@ -386,10 +441,23 @@ public class GlowPaintActivity extends Activity {
                 return;
             }
             pushUndo();
-            mask.eraseColor(Color.rgb(LivingImage.MASK_AUTO, LivingImage.MASK_AUTO, LivingImage.MASK_AUTO));
+            mask.eraseColor(Color.rgb(blank(), blank(), blank()));
             rebuildOverlay();
             invalidate();
             refreshGlow();
+        }
+
+        /** Replaces the whole painting with {@code next} (stretched to fit); undoable. */
+        void replaceMask(Bitmap next) {
+            if (mask == null) {
+                return;
+            }
+            pushUndo();
+            Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
+            p.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC));
+            maskCanvas.drawBitmap(next, null, new android.graphics.Rect(0, 0, mask.getWidth(), mask.getHeight()), p);
+            rebuildOverlay();
+            invalidate();
         }
 
         private void pushUndo() {
@@ -412,6 +480,10 @@ public class GlowPaintActivity extends Activity {
         }
 
         private int overlayColor(int value) {
+            if (subjectMode) {
+                // Soft detected edges show as fainter purple.
+                return Color.argb(value * 130 / 255, 170, 90, 255);
+            }
             if (value > LivingImage.MASK_AUTO + 8) {
                 return Color.argb(90, 0, 229, 255);
             }
@@ -531,6 +603,7 @@ public class GlowPaintActivity extends Activity {
 
         private void paintTo(float mx, float my) {
             int value = mode == MODE_GLOW ? 255 : mode == MODE_NO_GLOW ? 0 : LivingImage.MASK_AUTO;
+            // In subject mode the two brushes are Subject (255) and Erase (0), the same values.
             // Brush size is in screen dp, so convert it to mask pixels at the current zoom.
             float[] values = new float[9];
             viewMatrix.getValues(values);

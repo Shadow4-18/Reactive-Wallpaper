@@ -128,6 +128,13 @@ final class WallpaperSettings {
     float fxGrain = 0f;
     float fxVignette = 0f;
 
+    // Subject in front (when the picture has a subject mask).
+    boolean subjectFront = true;
+    /** How far the subject moves apart from the background, 0 .. 1. */
+    float subjectDepth = 0.4f;
+    /** A light glowing behind the subject with the bass, 0 .. 1. */
+    float subjectAura = 0.5f;
+
     // Visualizer overlay.
     int style = STYLE_BARS;
     float vizHeight = 1f;
@@ -334,6 +341,9 @@ final class WallpaperSettings {
         s.fxHaze = p.getFloat("fxHaze", s.fxHaze);
         s.fxGrain = p.getFloat("fxGrain", s.fxGrain);
         s.fxVignette = p.getFloat("fxVignette", s.fxVignette);
+        s.subjectFront = p.getBoolean("subjectFront", s.subjectFront);
+        s.subjectDepth = p.getFloat("subjectDepth", s.subjectDepth);
+        s.subjectAura = p.getFloat("subjectAura", s.subjectAura);
 
         s.style = p.getInt("style", s.style);
         s.vizHeight = p.getFloat("vizHeight", p.getFloat("intensity", s.vizHeight));
@@ -434,6 +444,9 @@ final class WallpaperSettings {
         w.putFloat("fxHaze", fxHaze);
         w.putFloat("fxGrain", fxGrain);
         w.putFloat("fxVignette", fxVignette);
+        w.putBoolean("subjectFront", subjectFront);
+        w.putFloat("subjectDepth", subjectDepth);
+        w.putFloat("subjectAura", subjectAura);
         w.putInt("style", style);
         w.putFloat("vizHeight", vizHeight);
         w.putFloat("vizOpacity", vizOpacity);

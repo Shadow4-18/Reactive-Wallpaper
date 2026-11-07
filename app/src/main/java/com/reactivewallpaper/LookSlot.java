@@ -44,6 +44,7 @@ final class LookSlot {
     void setBackground(String key, Background background, boolean fade) {
         WallpaperRenderer next = new WallpaperRenderer(density);
         next.setImage(background.image, background.mask);
+        next.setSubject(background.subject);
         next.setFramed(background.framed);
         next.setMedia(background.media);
         next.setMediaPlaying(playing);
@@ -153,14 +154,17 @@ final class LookSlot {
         final android.graphics.Bitmap image;
         final android.graphics.Bitmap mask;
         final MediaBackground media;
+        /** Built from the image and its subject mask, or null. */
+        final SubjectLayer subject;
         /** False for backgrounds already shaped for the screen (album art), which skip framing. */
         final boolean framed;
 
         Background(android.graphics.Bitmap image, android.graphics.Bitmap mask, MediaBackground media,
-                   boolean framed) {
+                   SubjectLayer subject, boolean framed) {
             this.image = image;
             this.mask = mask;
             this.media = media;
+            this.subject = subject;
             this.framed = framed;
         }
     }

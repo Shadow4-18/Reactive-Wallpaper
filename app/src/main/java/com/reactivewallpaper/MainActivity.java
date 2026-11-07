@@ -32,6 +32,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_AUDIO = 2;
     private static final int REQUEST_PAINT = 3;
     private static final int REQUEST_DIAGNOSTICS = 6;
+    private static final int REQUEST_SUBJECT = 7;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -225,6 +226,32 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         ui.toggle(glow, "Swap which color follows the bass",
                 () -> s.swapGlowColors, v -> s.swapGlowColors = v);
+
+        LinearLayout subject = ui.section("Subject in front", false);
+        ui.hint(subject, "Mark the picture's subject (a person, a character) and it's drawn in front of the "
+                + "glow, particles and visualizer, with its own depth.");
+        Button markSubject = new Button(this);
+        markSubject.setText("Mark the subject");
+        markSubject.setOnClickListener(v -> {
+            if (!ImageStore.hasDraftImage(this)) {
+                Toast.makeText(this, "Choose an image first.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            if (settings.mediaType != WallpaperSettings.MEDIA_IMAGE) {
+                Toast.makeText(this, "The subject can be marked on still images only.", Toast.LENGTH_LONG).show();
+                return;
+            }
+            Intent intent = new Intent(this, GlowPaintActivity.class);
+            intent.putExtra(GlowPaintActivity.EXTRA_SUBJECT, true);
+            startActivityForResult(intent, REQUEST_SUBJECT);
+        });
+        subject.addView(markSubject, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ui.toggle(subject, "Draw the subject in front", () -> s.subjectFront, v -> s.subjectFront = v);
+        ui.slider(subject, "Depth (moves apart from the background)", 0f, 1f,
+                () -> s.subjectDepth, v -> s.subjectDepth = v, Controls::percent);
+        ui.slider(subject, "Light behind the subject", 0f, 1f,
+                () -> s.subjectAura, v -> s.subjectAura = v, Controls::percent);
 
         LinearLayout albumArt = ui.section("Album art", false);
         ui.toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
@@ -635,14 +662,24 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             Bitmap bitmap = ImageStore.load(ImageStore.draftFile(this), w, h);
             Bitmap mask = ImageStore.loadMask(ImageStore.draftMaskFile(this));
+            Bitmap subjectMask = mediaType == WallpaperSettings.MEDIA_IMAGE
+                    ? ImageStore.loadMask(ImageStore.draftSubjectFile(this)) : null;
+            SubjectLayer subject = subjectMask != null ? SubjectLayer.build(bitmap, subjectMask) : null;
+            if (subjectMask != null) {
+                subjectMask.recycle();
+            }
             mainHandler.post(() -> {
                 if (isDestroyed()) {
                     if (bitmap != null) {
                         bitmap.recycle();
                     }
+                    if (subject != null) {
+                        subject.release();
+                    }
                     return;
                 }
                 renderer.setImage(bitmap, mask);
+                renderer.setSubject(subject);
                 renderer.setFramed(true);
                 // Videos and GIFs open on the main thread (their players call back here).
                 renderer.setMedia(mediaType != WallpaperSettings.MEDIA_IMAGE
@@ -677,7 +714,7 @@ public class MainActivity extends Activity {
         if (looksUi.onActivityResult(requestCode, resultCode, data)) {
             return;
         }
-        if (requestCode == REQUEST_PAINT && resultCode == RESULT_OK) {
+        if ((requestCode == REQUEST_PAINT || requestCode == REQUEST_SUBJECT) && resultCode == RESULT_OK) {
             // The painted mask counts as an image change: preview and wallpaper reload both.
             settings.imageVersion = System.currentTimeMillis();
             saveDraft();
@@ -692,8 +729,9 @@ public class MainActivity extends Activity {
             String type = getContentResolver().getType(uri);
             int mediaType = ImageStore.importBackground(this, uri);
             if (mediaType >= 0) {
-                // A painted mask belongs to the old picture.
+                // Painted masks belong to the old picture.
                 ImageStore.draftMaskFile(this).delete();
+                ImageStore.draftSubjectFile(this).delete();
             }
             mainHandler.post(() -> {
                 if (isDestroyed()) {

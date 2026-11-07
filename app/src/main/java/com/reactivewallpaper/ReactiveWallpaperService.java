@@ -350,16 +350,30 @@ public class ReactiveWallpaperService extends WallpaperService {
             LookSlot.Background background;
             if (useArt) {
                 background = new LookSlot.Background(
-                        AlbumArt.compose(art, width, height, s.albumArtStyle), null, null, false);
+                        AlbumArt.compose(art, width, height, s.albumArtStyle), null, null, null, false);
             } else {
+                android.graphics.Bitmap image = ImageStore.load(look.picture.image, width, height);
+                boolean still = s.mediaType == WallpaperSettings.MEDIA_IMAGE;
                 background = new LookSlot.Background(
-                        ImageStore.load(look.picture.image, width, height),
+                        image,
                         ImageStore.loadMask(look.picture.mask),
-                        s.mediaType != WallpaperSettings.MEDIA_IMAGE
-                                ? MediaBackground.open(context, look.picture.media, s.mediaType) : null,
+                        still ? null : MediaBackground.open(context, look.picture.media, s.mediaType),
+                        still ? loadSubject(image, look.picture) : null,
                         true);
             }
             slot.setBackground(key, background, fade && slot.hasBackground());
+        }
+
+        private SubjectLayer loadSubject(android.graphics.Bitmap image, ImageStore.Picture picture) {
+            android.graphics.Bitmap mask = ImageStore.loadMask(picture.subject);
+            if (mask == null) {
+                return null;
+            }
+            try {
+                return SubjectLayer.build(image, mask);
+            } finally {
+                mask.recycle();
+            }
         }
 
         private void loadRotation() {

@@ -21,6 +21,11 @@
         android:label="@string/app_name"
         android:theme="@style/AppTheme">
 
+        <!-- Ask Play services to fetch the subject detector when the app is installed. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="subject_segment" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

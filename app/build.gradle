@@ -57,6 +57,9 @@ android {
 }
 
 dependencies {
+    // On-device subject detection for "Subject in front" (runs through Google Play services).
+    implementation 'com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1'
+
     // Test-only libraries: none of these ship in the app.
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'junit:junit:4.13.2'
