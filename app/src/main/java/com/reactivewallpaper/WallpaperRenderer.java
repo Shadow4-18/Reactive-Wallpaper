@@ -158,6 +158,59 @@ final class WallpaperRenderer {
             moments.release();
             moments = null;
         }
+        if (sparkleSampler != null) {
+            sparkleSampler.shutdown();
+            sparkleSampler = null;
+        }
+    }
+
+    // Sparkles on videos and GIFs: their glowing spots are found again a few
+    // times a second, off this thread, and the sparkles follow them.
+    private static final long SPARKLE_SAMPLE_MS = 200;
+    private java.util.concurrent.ExecutorService sparkleSampler;
+    private volatile boolean sampling;
+    private volatile float[][] sampledSpots;
+    private long lastSparkleSample;
+
+    private void followMediaSparkles(WallpaperSettings s) {
+        if (living == null || s.particleStyle != WallpaperSettings.PARTICLE_SPARKLES || s.sparkleAmount <= 0f) {
+            return;
+        }
+        float[][] spots = sampledSpots;
+        if (spots != null) {
+            sampledSpots = null;
+            living.moveSparkles(spots[0], spots[1], (int) spots[2][0]);
+        }
+        long now = android.os.SystemClock.uptimeMillis();
+        if (sampling || now - lastSparkleSample < SPARKLE_SAMPLE_MS) {
+            return;
+        }
+        lastSparkleSample = now;
+        Bitmap frame = mediaFrame;
+        // A GIF's frame is redrawn in place every frame, so take a small copy now; a
+        // video frame is its own buffer and is read on the other thread.
+        Bitmap toRead = frame.getConfig() == Bitmap.Config.HARDWARE ? frame
+                : Bitmap.createScaledBitmap(frame, Math.min(MediaSparkles.SAMPLE_WIDTH, frame.getWidth()),
+                        Math.max(1, Math.round(frame.getHeight() * Math.min(MediaSparkles.SAMPLE_WIDTH,
+                                frame.getWidth()) / (float) frame.getWidth())), true);
+        int rotation = media != null ? media.rotation() : 0;
+        float coverage = s.glowCoverage;
+        if (sparkleSampler == null) {
+            sparkleSampler = java.util.concurrent.Executors.newSingleThreadExecutor();
+        }
+        sampling = true;
+        sparkleSampler.execute(() -> {
+            try {
+                sampledSpots = MediaSparkles.spots(toRead, rotation, coverage);
+            } catch (RuntimeException e) {
+                // A frame that couldn't be read: try the next one.
+            } finally {
+                if (toRead != frame) {
+                    toRead.recycle();
+                }
+                sampling = false;
+            }
+        });
     }
 
     /** Plays the unlock intro in the look's style (if it has one). */
@@ -299,6 +352,7 @@ final class WallpaperRenderer {
         }
         if (mediaFrame != null) {
             drawMediaGlow(canvas, w, h, audio, s, dt);
+            followMediaSparkles(s);
         }
         if (taps != null) {
             taps.draw(canvas, dt, density);

@@ -39,10 +39,15 @@ final class ParticleSystem {
     private final int[] color = new int[MAX];
     private final boolean[] glints = new boolean[MAX];
 
-    // Where sparkles appear (the picture's glowing spots).
-    private final float[] spawnU;
-    private final float[] spawnV;
-    private final int spawnCount;
+    // Where sparkles appear (the picture's glowing spots); moving backgrounds update them.
+    private float[] spawnU;
+    private float[] spawnV;
+    private int spawnCount;
+    // The spot each sparkle came from, so it can follow that spot as a video moves.
+    private final float[] anchorU = new float[MAX];
+    private final float[] anchorV = new float[MAX];
+    /** How far (as a fraction of the picture) a spot may move between samples and still be followed. */
+    private static final float FOLLOW = 0.06f;
 
     // Sprites: per palette color, plus a few white/colored-in shapes.
     private final int paletteCount;
@@ -95,6 +100,49 @@ final class ParticleSystem {
         whiteStreak = Sprites.tint(streakAlpha, 256, 32, Color.WHITE);
         glint = Sprites.tint(Sprites.glint(64), 64, 64, Color.WHITE);
         bubble = Sprites.bubble(128);
+    }
+
+    /**
+     * The glowing spots moved (a video or GIF's new frame): sparkles follow the
+     * spot they came from to its nearest new place, and fade out quickly if
+     * it's gone; new sparkles appear on the new spots.
+     */
+    void moveSpawns(float[] newU, float[] newV, int count) {
+        if (count <= 0) {
+            return;
+        }
+        spawnU = newU;
+        spawnV = newV;
+        spawnCount = count;
+        if (style != WallpaperSettings.PARTICLE_SPARKLES) {
+            return;
+        }
+        float limit = FOLLOW * FOLLOW;
+        for (int i = 0; i < MAX; i++) {
+            if (life[i] >= maxLife[i]) {
+                continue;
+            }
+            int nearest = -1;
+            float best = limit;
+            for (int k = 0; k < count; k++) {
+                float du = newU[k] - anchorU[i];
+                float dv = newV[k] - anchorV[i];
+                float d = du * du + dv * dv;
+                if (d < best) {
+                    best = d;
+                    nearest = k;
+                }
+            }
+            if (nearest >= 0) {
+                u[i] += newU[nearest] - anchorU[i];
+                v[i] += newV[nearest] - anchorV[i];
+                anchorU[i] = newU[nearest];
+                anchorV[i] = newV[nearest];
+            } else {
+                // Its spot went dark: let it go rather than hang in empty space.
+                life[i] = Math.max(life[i], maxLife[i] - 0.35f);
+            }
+        }
     }
 
     void release() {
@@ -431,6 +479,8 @@ final class ParticleSystem {
                     u[i] = random.nextFloat();
                     v[i] = 0.3f + random.nextFloat() * 0.6f;
                 }
+                anchorU[i] = u[i];
+                anchorV[i] = v[i];
                 vu[i] = 0f;
                 vv[i] = -0.012f;
                 maxLife[i] = 2.5f + 4f * random.nextFloat();

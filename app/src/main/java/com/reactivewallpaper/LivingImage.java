@@ -222,6 +222,11 @@ final class LivingImage {
         return pixels.length > 0 ? (float) (weightSum / pixels.length) : 0f;
     }
 
+    /** A moving background's glowing spots moved: sparkles follow (see {@link ParticleSystem#moveSpawns}). */
+    void moveSparkles(float[] u, float[] v, int count) {
+        particles.moveSpawns(u, v, count);
+    }
+
     void release() {
         for (Bitmap[] group : layers) {
             for (Bitmap b : group) {
