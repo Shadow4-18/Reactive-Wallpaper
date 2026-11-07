@@ -60,4 +60,16 @@ public class LookCodeTest {
         assertNull(LookCode.decode(LookCode.PREFIX + "not-really-a-look"));
         assertNull(LookCode.decode(LookCode.PREFIX));
     }
+
+    @Test
+    public void readsTheWebLinkToo() {
+        WallpaperSettings s = new WallpaperSettings();
+        s.style = WallpaperSettings.STYLE_LED;
+        String link = LookCode.webLink("Web", s);
+        assertTrue(link.startsWith("https://"));
+        LookCode.Look back = LookCode.decode("Tap to add it in Resona:\n" + link);
+        assertNotNull(back);
+        assertEquals("Web", back.name);
+        assertEquals(WallpaperSettings.STYLE_LED, back.settings.style);
+    }
 }

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resona look</title>
+<meta name="description" content="A wallpaper look shared from Resona.">
+<style>
+  :root { color-scheme: dark; --bg: #0b0d14; --surface: #161a24; --text: #eef1f7; --muted: #9aa3b5; --accent: #5ee2ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: radial-gradient(ellipse at top, #1d1433, var(--bg) 60%); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 24px 16px; }
+  main { width: 100%; max-width: 420px; background: var(--surface); border-radius: 20px; padding: 28px 24px;
+         box-shadow: 0 20px 60px rgba(0,0,0,.5); text-align: center; }
+  .ring { width: 72px; height: 72px; margin: 0 auto 16px; border-radius: 50%;
+          border: 3px solid #ff3dcb; box-shadow: 0 0 18px #ff3dcb, inset 0 0 0 9px var(--surface), inset 0 0 0 12px var(--accent); }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  p { color: var(--muted); margin: 0 0 18px; }
+  a.button { display: block; padding: 14px; border-radius: 12px; text-decoration: none; font-weight: 600; margin-top: 10px; }
+  .primary { background: var(--accent); color: #000; }
+  .secondary { background: transparent; color: var(--accent); border: 1px solid #2c3446; }
+  .error { color: #ff8a8a; }
+</style>
+</head>
+<body>
+<main>
+  <div class="ring" aria-hidden="true"></div>
+  <h1 id="title">A Resona look</h1>
+  <p id="text">Someone shared a wallpaper look with you. Open it in Resona to add it to your looks.</p>
+  <a class="button primary" id="open" href="#">Open in Resona</a>
+  <a class="button secondary" href="https://github.com/Shadow4-18/Reactive-Wallpaper/releases/latest/download/Resona.apk">Get Resona for Android</a>
+  <p id="help" style="margin-top:18px;font-size:14px">Already have Resona and nothing happens? Copy this page's link, then in Resona open Looks &gt; Paste a look.</p>
+</main>
+<script>
+  // The look travels in the part after "#", which is never sent to any server.
+  var data = location.hash.slice(1);
+  var open = document.getElementById('open');
+  if (!/^[A-Za-z0-9_-]{8,4000}$/.test(data)) {
+    document.getElementById('title').textContent = 'This link is incomplete';
+    document.getElementById('text').textContent = 'The look in this link was cut off. Ask for the link again, or scan their QR code in Resona.';
+    document.getElementById('text').className = 'error';
+    open.style.display = 'none';
+  } else {
+    var fallback = encodeURIComponent('https://github.com/Shadow4-18/Reactive-Wallpaper/releases/latest');
+    var isAndroid = /Android/i.test(navigator.userAgent);
+    open.href = isAndroid
+      ? 'intent://look/' + data + '#Intent;scheme=resona;package=com.reactivewallpaper;S.browser_fallback_url=' + fallback + ';end'
+      : 'resona://look/' + data;
+    if (isAndroid) {
+      // Straight into the app where the browser allows it; the button is there otherwise.
+      setTimeout(function () { location.href = open.href; }, 300);
+    }
+  }
+</script>
+</body>
+</html>

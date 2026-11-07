@@ -19,6 +19,12 @@ import java.util.zip.Inflater;
  */
 final class LookCode {
     static final String PREFIX = "resona://look/";
+    /**
+     * The same look as a web link, which chat apps make tappable; the page it
+     * opens hands the look to Resona (see site/look/index.html).
+     */
+    static final String WEB_PREFIX = "https://shadow4-18.github.io/Reactive-Wallpaper/look/#";
+    private static final String WEB_MARKER = "/look/#";
     /** Bumped if the format ever changes incompatibly. */
     private static final int VERSION = 1;
     /** Decoded looks are refused past this size (a code is a few hundred bytes). */
@@ -67,17 +73,28 @@ final class LookCode {
         }
     }
 
-    /** The look in a code or link, or null if it isn't one (or is damaged). */
+    /** The look as a tappable web link, for messages and QR codes. */
+    static String webLink(String name, WallpaperSettings settings) {
+        return WEB_PREFIX + encode(name, settings).substring(PREFIX.length());
+    }
+
+    /** The look in a code or link (app or web form), or null if it isn't one (or is damaged). */
     static Look decode(String text) {
         if (text == null) {
             return null;
         }
         String trimmed = text.trim();
+        String data;
         int at = trimmed.indexOf(PREFIX);
-        if (at < 0) {
-            return null;
+        if (at >= 0) {
+            data = trimmed.substring(at + PREFIX.length());
+        } else {
+            int web = trimmed.indexOf(WEB_MARKER);
+            if (web < 0) {
+                return null;
+            }
+            data = trimmed.substring(web + WEB_MARKER.length());
         }
-        String data = trimmed.substring(at + PREFIX.length());
         int end = 0;
         while (end < data.length() && isBase64Url(data.charAt(end))) {
             end++;

@@ -1,0 +1,81 @@
+name: Gallery submissions
+
+# People suggest looks from Resona's gallery (Suggest yours), which opens an issue
+# with the look code. New issues are checked and answered; adding the "approved"
+# label (only people with write access can) adds the look to the gallery and
+# publishes it.
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  check:
+    if: github.event.action == 'opened' && contains(github.event.issue.body, 'look')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the look
+        id: check
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+        run: |
+          if python3 .github/scripts/gallery_submission.py check; then echo "valid=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Reply
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create approved --color 2EA043 --description "Add this look to the gallery" --force -R "$GITHUB_REPOSITORY"
+          gh label create gallery --color 5EE2FF --description "A look suggested for the gallery" --force -R "$GITHUB_REPOSITORY"
+          gh issue edit ${{ github.event.issue.number }} --add-label gallery -R "$GITHUB_REPOSITORY"
+          gh issue comment ${{ github.event.issue.number }} --body-file reply.md -R "$GITHUB_REPOSITORY"
+
+  add:
+    if: github.event.action == 'labeled' && github.event.label.name == 'approved'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add the look
+        id: add
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+        run: |
+          set +e
+          python3 .github/scripts/gallery_submission.py add
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+      - name: Commit
+        if: steps.add.outputs.status == '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gallery/looks.json
+          git commit -m "Add a look to the gallery (#${{ github.event.issue.number }})"
+          git push
+      # Pushes made by this workflow don't start others, so publish here too.
+      - name: Publish the gallery list
+        if: steps.add.outputs.status == '0'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gallery
+          name: Look gallery
+          prerelease: true
+          make_latest: false
+          files: gallery/looks.json
+          overwrite_files: true
+      - name: Reply and close
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ steps.add.outputs.status }}
+        run: |
+          if [ "$STATUS" = "0" ]; then msg="Added to the gallery. It shows up in Resona the next time the gallery opens."
+          elif [ "$STATUS" = "2" ]; then msg="This look is already in the gallery."
+          else msg="Couldn't add this look; see the workflow run for details."; fi
+          gh issue comment ${{ github.event.issue.number }} --body "$msg" -R "$GITHUB_REPOSITORY"
+          if [ "$STATUS" = "0" ] || [ "$STATUS" = "2" ]; then gh issue close ${{ github.event.issue.number }} -R "$GITHUB_REPOSITORY"; fi

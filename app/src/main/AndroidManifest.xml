@@ -40,6 +40,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="resona" android:host="look" />
             </intent-filter>
+            <!-- The web form of a shared look. Android opens it here directly only if the user
+                 allows it in Resona's "Open by default" settings; otherwise the page hands it on. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="shadow4-18.github.io"
+                    android:pathPrefix="/Reactive-Wallpaper/look" />
+            </intent-filter>
             <!-- A shared look message sent to Resona from any app's Share menu. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

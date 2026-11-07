@@ -37,7 +37,8 @@ final class LookShare {
 
     /** Shows a look's QR code, with a button to send it as a link instead. */
     static void show(Activity activity, String name, WallpaperSettings settings) {
-        String code = LookCode.encode(name, settings);
+        // The web form: chat apps make it tappable, and phone cameras open it too.
+        String code = LookCode.webLink(name, settings);
         int size = Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 260,
                 activity.getResources().getDisplayMetrics()));
         Bitmap qr = qrBitmap(code, size);
@@ -55,8 +56,8 @@ final class LookShare {
             box.addView(image, new LinearLayout.LayoutParams(size + pad, size + pad));
         }
         TextView hint = new TextView(activity);
-        hint.setText("Scan it in Resona (Looks > Scan a look). The look comes without the picture, "
-                + "so it applies to whatever picture the other phone uses.");
+        hint.setText("Scan it in Resona (Looks > Scan a look) or with any phone camera. The look comes "
+                + "without the picture, so it applies to whatever picture the other phone uses.");
         hint.setTextColor(activity.getColor(R.color.text_secondary));
         hint.setPadding(0, pad, 0, 0);
         box.addView(hint);
@@ -66,9 +67,9 @@ final class LookShare {
                 .setPositiveButton("Send as link", (d, w) -> {
                     Intent send = new Intent(Intent.ACTION_SEND)
                             .setType("text/plain")
-                            .putExtra(Intent.EXTRA_TEXT, "My Resona wallpaper look “" + name + "”.\n"
-                                    + "To add it: copy this message, then in Resona open Looks > Paste a look "
-                                    + "(or share this message to Resona).\n" + code);
+                            .putExtra(Intent.EXTRA_TEXT, "My Resona wallpaper look “" + name + "”. Tap to "
+                                    + "add it in Resona (or copy this message and use Looks > Paste a look):\n"
+                                    + code);
                     activity.startActivity(Intent.createChooser(send, "Share look"));
                 })
                 .setNegativeButton("Close", null)
