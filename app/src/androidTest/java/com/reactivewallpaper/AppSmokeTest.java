@@ -84,7 +84,26 @@ public class AppSmokeTest {
         if (extras != null) {
             intent.putExtras(extras);
         }
-        return instrumentation.startActivitySync(intent);
+        // Not startActivitySync: it waits for the main thread to go fully idle, which a live,
+        // animating preview may never do on a slow emulator. Wait until it's resumed instead.
+        context.startActivity(intent);
+        long deadline = SystemClock.uptimeMillis() + 45000;
+        while (SystemClock.uptimeMillis() < deadline) {
+            Activity[] found = new Activity[1];
+            instrumentation.runOnMainSync(() -> {
+                for (Activity a : androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)) {
+                    if (a.getClass() == activity) {
+                        found[0] = a;
+                    }
+                }
+            });
+            if (found[0] != null) {
+                return found[0];
+            }
+            SystemClock.sleep(200);
+        }
+        throw new AssertionError(activity.getSimpleName() + " didn't open");
     }
 
     @Test
