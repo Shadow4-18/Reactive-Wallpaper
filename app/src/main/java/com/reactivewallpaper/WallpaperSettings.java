@@ -120,6 +120,14 @@ final class WallpaperSettings {
     /** What touching the home screen does. */
     int tapEffect = TAP_OFF;
 
+    // Shader effects over the whole frame (Android 13+), 0 = off.
+    float fxRipple = 0f;
+    float fxSplit = 0f;
+    float fxGlitch = 0f;
+    float fxHaze = 0f;
+    float fxGrain = 0f;
+    float fxVignette = 0f;
+
     // Visualizer overlay.
     int style = STYLE_BARS;
     float vizHeight = 1f;
@@ -320,6 +328,12 @@ final class WallpaperSettings {
         s.camPunch = p.getFloat("camPunch", s.camPunch);
         s.camTilt = p.getFloat("camTilt", s.camTilt);
         s.tapEffect = p.getInt("tapEffect", s.tapEffect);
+        s.fxRipple = p.getFloat("fxRipple", s.fxRipple);
+        s.fxSplit = p.getFloat("fxSplit", s.fxSplit);
+        s.fxGlitch = p.getFloat("fxGlitch", s.fxGlitch);
+        s.fxHaze = p.getFloat("fxHaze", s.fxHaze);
+        s.fxGrain = p.getFloat("fxGrain", s.fxGrain);
+        s.fxVignette = p.getFloat("fxVignette", s.fxVignette);
 
         s.style = p.getInt("style", s.style);
         s.vizHeight = p.getFloat("vizHeight", p.getFloat("intensity", s.vizHeight));
@@ -414,6 +428,12 @@ final class WallpaperSettings {
         w.putFloat("camPunch", camPunch);
         w.putFloat("camTilt", camTilt);
         w.putInt("tapEffect", tapEffect);
+        w.putFloat("fxRipple", fxRipple);
+        w.putFloat("fxSplit", fxSplit);
+        w.putFloat("fxGlitch", fxGlitch);
+        w.putFloat("fxHaze", fxHaze);
+        w.putFloat("fxGrain", fxGrain);
+        w.putFloat("fxVignette", fxVignette);
         w.putInt("style", style);
         w.putFloat("vizHeight", vizHeight);
         w.putFloat("vizOpacity", vizOpacity);

@@ -46,6 +46,8 @@ final class WallpaperRenderer {
     private boolean paged;
     private final CameraRig camera = new CameraRig();
     private TapEffects taps;
+    /** GPU effects over the whole frame; created when first needed (Android 13+). */
+    private ShaderEffects fx;
     private MediaBackground media;
     private Bitmap mediaFrame;
     private final Matrix mediaMatrix = new Matrix();
@@ -123,6 +125,10 @@ final class WallpaperRenderer {
             taps.release();
             taps = null;
         }
+        if (fx != null) {
+            fx.release();
+            fx = null;
+        }
     }
 
     /** A touch on the home screen (or preview) at x, y; {@code moving} while dragging. */
@@ -135,11 +141,18 @@ final class WallpaperRenderer {
         }
         int[] colors = {colorAt(s, 0f), colorAt(s, 0.5f), colorAt(s, 1f)};
         taps.touch(s.tapEffect, x, y, moving, colors, density);
+        if (s.tapEffect == WallpaperSettings.TAP_RIPPLE && !moving && android.os.Build.VERSION.SDK_INT >= 33) {
+            // On Android 13+ the ripple also bends the picture like water.
+            if (fx == null) {
+                fx = new ShaderEffects(density);
+            }
+            fx.ripple(x, y);
+        }
     }
 
     /** True while something is still moving without music (a tap effect, a settling camera). */
     boolean isBusy() {
-        return (taps != null && taps.isActive())
+        return (taps != null && taps.isActive()) || (fx != null && fx.isActive())
                 || Math.abs(camera.zoom()) > 0.0005f || Math.abs(camera.angle()) > 0.02f;
     }
 
@@ -187,6 +200,21 @@ final class WallpaperRenderer {
     }
 
     void draw(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s, float dt) {
+        boolean tapRipple = s.tapEffect == WallpaperSettings.TAP_RIPPLE;
+        if (ShaderEffects.wanted(s, canvas, tapRipple) && (fx == null || !fx.failed())) {
+            if (fx == null) {
+                fx = new ShaderEffects(density);
+            }
+            // Record the whole frame, then draw it through the effects shader.
+            drawFrame(fx.begin(w, h), w, h, audio, s, dt);
+            float centerY = s.style == WallpaperSettings.STYLE_CIRCLE ? h * s.circleY : h * 0.55f;
+            fx.end(canvas, w, h, s, audio, dt, centerY);
+            return;
+        }
+        drawFrame(canvas, w, h, audio, s, dt);
+    }
+
+    private void drawFrame(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s, float dt) {
         time += dt;
         swayPhase += dt * s.swaySpeed;
         cyclePhase = (cyclePhase + dt * s.colorCycle * 30f) % 360f;

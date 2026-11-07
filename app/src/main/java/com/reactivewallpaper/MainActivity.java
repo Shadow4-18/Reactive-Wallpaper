@@ -292,6 +292,20 @@ public class MainActivity extends Activity {
         ui.slider(beat, "Camera punch (zoom kick)", 0f, 2f, () -> s.camPunch, v -> s.camPunch = v, Controls::percent);
         ui.slider(beat, "Camera tilt (alternating)", 0f, 2f, () -> s.camTilt, v -> s.camTilt = v, Controls::percent);
 
+        LinearLayout effects = ui.section("Shader effects", false);
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            ui.slider(effects, "Bass ripples", 0f, 2f, () -> s.fxRipple, v -> s.fxRipple = v, Controls::percent);
+            ui.slider(effects, "Color split on beats", 0f, 2f, () -> s.fxSplit, v -> s.fxSplit = v, Controls::percent);
+            ui.slider(effects, "Glitch on beats", 0f, 2f, () -> s.fxGlitch, v -> s.fxGlitch = v, Controls::percent);
+            ui.slider(effects, "Heat haze", 0f, 2f, () -> s.fxHaze, v -> s.fxHaze = v, Controls::percent);
+            ui.slider(effects, "Film grain", 0f, 1f, () -> s.fxGrain, v -> s.fxGrain = v, Controls::percent);
+            ui.slider(effects, "Vignette", 0f, 1f, () -> s.fxVignette, v -> s.fxVignette = v, Controls::percent);
+            ui.hint(effects, "These bend and color the whole picture on the GPU. With the Ripple tap effect, "
+                    + "taps make the picture ripple like water too.");
+        } else {
+            ui.hint(effects, "Shader effects need Android 13 or newer.");
+        }
+
         LinearLayout touch = ui.section("Touch", false);
         ui.choiceColumn(touch, new String[] {"Off", "Ripple of light", "Burst of sparks (drag for a trail)",
                         "Glow flare"},
