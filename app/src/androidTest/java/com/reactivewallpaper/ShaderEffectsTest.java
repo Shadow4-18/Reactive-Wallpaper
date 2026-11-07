@@ -70,8 +70,40 @@ public class ShaderEffectsTest {
         }, 80);
     }
 
-    /** Renders 92 frames of music on the GPU; a tap lands at frame {@code tapFrame} (or never). */
+    /**
+     * The glitch just after five different kicks, side by side: each burst
+     * should look different (slice heights and widths, kinds of damage, blocks).
+     */
+    @Test
+    public void glitchVariety() throws Exception {
+        java.util.List<Bitmap> frames = new java.util.ArrayList<>();
+        snapGpu("55_gpu_glitch_frames", TestScenes.neon(1200, 2660), s -> {
+            s.style = WallpaperSettings.STYLE_BARS;
+            s.fxGlitch = 1.5f;
+        }, -1, new int[] {16, 31, 47, 61, 77}, frames);
+        org.junit.Assert.assertEquals(5, frames.size());
+        int tw = W / 4;
+        int th = H / 4;
+        Bitmap sheet = Bitmap.createBitmap(5 * (tw + 8), th, Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas c = new android.graphics.Canvas(sheet);
+        for (int i = 0; i < frames.size(); i++) {
+            c.drawBitmap(Bitmap.createScaledBitmap(frames.get(i), tw, th, true), i * (tw + 8), 0, null);
+        }
+        TestScenes.saveShot(context, "render_55_gpu_glitch_variety", sheet);
+        // Full size too, to see the detail.
+        TestScenes.saveShot(context, "render_56_gpu_glitch_detail", frames.get(2));
+    }
+
     private void snapGpu(String name, Bitmap image, Consumer<WallpaperSettings> tweak, int tapFrame) throws Exception {
+        snapGpu(name, image, tweak, tapFrame, null, null);
+    }
+
+    /**
+     * Renders 92 frames of music on the GPU; a tap lands at frame {@code tapFrame} (or never).
+     * Frames listed in {@code capture} are also copied into {@code captured}.
+     */
+    private void snapGpu(String name, Bitmap image, Consumer<WallpaperSettings> tweak, int tapFrame,
+                         int[] capture, java.util.List<Bitmap> captured) throws Exception {
         WallpaperSettings s = new WallpaperSettings();
         tweak.accept(s);
         now = 0;
@@ -103,11 +135,23 @@ public class ShaderEffectsTest {
             gpu.createRenderRequest().setWaitForPresent(true).syncAndDraw();
             Image frame = reader.acquireLatestImage();
             if (frame != null) {
-                if (f == 91) {
+                boolean wanted = false;
+                if (capture != null) {
+                    for (int c : capture) {
+                        wanted |= c == f;
+                    }
+                }
+                if (f == 91 || wanted) {
                     HardwareBuffer buffer = frame.getHardwareBuffer();
-                    last = Bitmap.wrapHardwareBuffer(buffer, ColorSpace.get(ColorSpace.Named.SRGB))
+                    Bitmap copy = Bitmap.wrapHardwareBuffer(buffer, ColorSpace.get(ColorSpace.Named.SRGB))
                             .copy(Bitmap.Config.ARGB_8888, false);
                     buffer.close();
+                    if (wanted) {
+                        captured.add(copy);
+                    }
+                    if (f == 91) {
+                        last = copy;
+                    }
                 }
                 frame.close();
             }

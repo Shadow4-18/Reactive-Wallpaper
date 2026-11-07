@@ -30,12 +30,17 @@ final class ShaderEffects {
             + "uniform float rippleAmp;\n"
             + "uniform float split;\n"
             + "uniform float glitch;\n"
+            + "uniform float glitchSeed;\n"
             + "uniform float haze;\n"
             + "uniform float grain;\n"
             + "uniform float vignette;\n"
             + "\n"
             + "float hash(float2 p) {\n"
             + "    return fract(sin(dot(p, float2(12.9898, 78.233))) * 43758.5453);\n"
+            + "}\n"
+            // A different random value for every (p, burst pattern).
+            + "float gh(float2 p) {\n"
+            + "    return fract(sin(dot(p, float2(127.1, 311.7)) + glitchSeed * 74.7) * 43758.5453);\n"
             + "}\n"
             + "\n"
             + "half4 main(float2 p) {\n"
@@ -55,21 +60,62 @@ final class ShaderEffects {
             + "        q += haze * density * 1.6 * float2(sin(p.y / (14.0 * density) + time * 2.1),\n"
             + "                cos(p.x / (18.0 * density) + time * 1.7));\n"
             + "    }\n"
-            // Glitch: random horizontal slices jump sideways for a moment.
+            // Glitch: every burst pattern (glitchSeed) lays out its own slices and blocks.
+            + "    float sliceSplit = 0.0;\n"
+            + "    float invert = 0.0;\n"
             + "    if (glitch > 0.0) {\n"
-            + "        float row = floor(p.y / (10.0 * density));\n"
-            + "        float tick = floor(time * 24.0);\n"
-            + "        if (hash(float2(row, tick)) < glitch * 0.3) {\n"
-            + "            q.x += (hash(float2(row + 7.0, tick)) - 0.5) * 60.0 * density * glitch;\n"
+            + "        float u = density;\n"
+            // Slices of varied height: thin scanlines to thick bands, picked per stretch of screen.
+            + "        float stretch = floor(p.y / (90.0 * u));\n"
+            + "        float pick = gh(float2(stretch, 1.0));\n"
+            + "        float bandH = pick < 0.35 ? 3.0 * u : (pick < 0.7 ? 9.0 * u : (pick < 0.9 ? 22.0 * u : 55.0 * u));\n"
+            + "        float row = floor(p.y / bandH) + stretch * 97.0;\n"
+            + "        if (gh(float2(row, 2.0)) < glitch * 0.32) {\n"
+            // Each slice covers part of the width, and does its own kind of damage.
+            + "            float x0 = (gh(float2(row, 3.0)) * 1.1 - 0.3) * size.x;\n"
+            + "            float len = size.x * (0.2 + 0.9 * gh(float2(row, 4.0)));\n"
+            + "            if (p.x > x0 && p.x < x0 + len) {\n"
+            + "                float kind = gh(float2(row, 5.0));\n"
+            + "                float dir = gh(float2(row, 6.0)) < 0.5 ? -1.0 : 1.0;\n"
+            + "                if (kind < 0.42) {\n"
+            + "                    q.x += dir * (12.0 + 90.0 * gh(float2(row, 7.0))) * u * glitch;\n"
+            + "                } else if (kind < 0.6) {\n"
+            // Smear: the slice stretched out from one column, like a stuck scanline.
+            + "                    q.x = max(x0, 0.0) + gh(float2(row, 8.0)) * 30.0 * u;\n"
+            + "                } else if (kind < 0.8) {\n"
+            + "                    float cell = (5.0 + 20.0 * gh(float2(row, 9.0))) * u;\n"
+            + "                    q = (floor(q / cell) + 0.5) * cell;\n"
+            + "                } else {\n"
+            // Tear: the slice shows picture from a little above or below.
+            + "                    q.y += dir * (8.0 + 50.0 * gh(float2(row, 10.0))) * u;\n"
+            + "                }\n"
+            + "                if (gh(float2(row, 11.0)) < 0.45) {\n"
+            + "                    sliceSplit = dir * (3.0 + 9.0 * gh(float2(row, 12.0))) * u * glitch;\n"
+            + "                }\n"
+            + "                if (gh(float2(row, 13.0)) < 0.05) {\n"
+            + "                    invert = 1.0;\n"
+            + "                }\n"
+            + "            }\n"
             + "        }\n"
+            // Corrupted blocks: rectangles of picture copied from elsewhere, sized per burst.
+            + "        float bw = (30.0 + 70.0 * gh(float2(7.0, 7.0))) * u;\n"
+            + "        float2 cellId = floor(p / float2(bw, bw * (0.3 + 0.7 * gh(float2(8.0, 8.0)))));\n"
+            + "        if (gh(cellId + 20.0) < glitch * 0.05) {\n"
+            + "            q += (float2(gh(cellId + 21.0), gh(cellId + 22.0)) - 0.5) * float2(size.x * 0.4, 160.0 * u);\n"
+            + "        }\n"
+            + "        q = clamp(q, float2(0.0), size - 1.0);\n"
             + "    }\n"
             + "    half4 c;\n"
-            + "    if (split > 0.0) {\n"
-            + "        float2 o = float2(split, 0.0);\n"
+            + "    float fringe = split + sliceSplit;\n"
+            + "    if (fringe != 0.0) {\n"
+            + "        float2 o = float2(fringe, 0.0);\n"
             + "        half4 g = content.eval(q);\n"
             + "        c = half4(content.eval(q + o).r, g.g, content.eval(q - o).b, g.a);\n"
             + "    } else {\n"
             + "        c = content.eval(q);\n"
+            + "    }\n"
+            + "    if (invert > 0.0) {\n"
+            + "        c.rgb = half3(1.0) - c.rgb;\n"
             + "    }\n"
             + "    if (grain > 0.0) {\n"
             + "        float n = hash(p + fract(time) * 100.0) - 0.5;\n"
@@ -92,6 +138,7 @@ final class ShaderEffects {
     private float rippleY;
     private float rippleStrength;
     private float lastBeat;
+    private final GlitchBursts glitches = new GlitchBursts(new java.util.Random());
 
     ShaderEffects(float density) {
         this.density = density;
@@ -147,6 +194,7 @@ final class ShaderEffects {
             rippleStrength = s.fxRipple * (0.5f + 0.5f * audio.bass());
         }
         rippleAge += dt;
+        glitches.update(dt, beat, s.fxGlitch);
         float level = audio.level();
         if (!failed && shader == null) {
             try {
@@ -167,7 +215,8 @@ final class ShaderEffects {
         shader.setFloatUniform("rippleAge", rippleAge);
         shader.setFloatUniform("rippleAmp", rippleAge < RIPPLE_SECONDS ? rippleStrength : 0f);
         shader.setFloatUniform("split", s.fxSplit * density * (6f * beat + 1.5f * level));
-        shader.setFloatUniform("glitch", beat > 0.25f ? s.fxGlitch * beat : 0f);
+        shader.setFloatUniform("glitch", glitches.strength());
+        shader.setFloatUniform("glitchSeed", glitches.seed());
         shader.setFloatUniform("haze", s.fxHaze * (0.4f + 0.6f * level));
         shader.setFloatUniform("grain", s.fxGrain);
         shader.setFloatUniform("vignette", s.fxVignette * (0.7f + 0.3f * audio.bass()));
@@ -177,7 +226,7 @@ final class ShaderEffects {
 
     /** True while a ripple is still spreading (so frames keep coming). */
     boolean isActive() {
-        return rippleAge < RIPPLE_SECONDS;
+        return rippleAge < RIPPLE_SECONDS || glitches.isActive();
     }
 
     void release() {
