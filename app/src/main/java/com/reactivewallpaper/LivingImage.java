@@ -32,6 +32,8 @@ final class LivingImage {
      * glowing (daylight photos, bright album covers), full glow would wash it out.
      */
     private final float glowScale;
+    /** Set by the renderer for backgrounds that need a gentler glow (album covers). */
+    private float extraScale = 1f;
 
     private final Random random = new Random();
     private final ParticleSystem particles;
@@ -103,6 +105,10 @@ final class LivingImage {
 
     float coverage() {
         return coverage;
+    }
+
+    void setExtraScale(float scale) {
+        extraScale = scale;
     }
 
     private static int[] pixelsAt(Bitmap source, int w, int h) {
@@ -245,8 +251,9 @@ final class LivingImage {
 
         float idleA = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 1.1f));
         float idleB = s.breathe * (0.3f + 0.22f * (float) Math.sin(breathePhase * 0.9f + 2.1f));
-        float bassAmount = (idleA + s.bassGlow * bass * 1.3f + s.beatFlare * beat) * glowScale;
-        float highAmount = (idleB + s.highGlow * high * 1.6f + s.beatFlare * beat * 0.35f) * glowScale;
+        float scale = glowScale * extraScale;
+        float bassAmount = (idleA + s.bassGlow * bass * 1.3f + s.beatFlare * beat) * scale;
+        float highAmount = (idleB + s.highGlow * high * 1.6f + s.beatFlare * beat * 0.35f) * scale;
         int bassGroup = s.swapGlowColors ? 1 : 0;
         if (drawGlow) {
             drawGroup(canvas, imageMatrix, bassGroup, bassAmount, s.bloom);

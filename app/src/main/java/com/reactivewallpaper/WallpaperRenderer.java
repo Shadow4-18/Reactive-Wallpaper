@@ -18,6 +18,11 @@ import android.graphics.Shader;
 final class WallpaperRenderer {
     private static final float[] DEFAULT_HUES = {185f, 300f};
     private static final PorterDuffXfermode ADD = new PorterDuffXfermode(PorterDuff.Mode.ADD);
+    /**
+     * Album covers are flat, bright designs rather than neon art: full glow piles up on
+     * their large light areas and washes them to white, so they glow more gently.
+     */
+    private static final float ALBUM_ART_GLOW = 0.35f;
 
     private final float density;
     private final Paint imagePaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
@@ -175,6 +180,7 @@ final class WallpaperRenderer {
                 living.release();
                 living = new LivingImage(image, mask, accentHues, s.glowCoverage);
             }
+            living.setExtraScale(framed ? 1f : ALBUM_ART_GLOW);
             // Particles sit "in front" of the picture, so they move further with parallax.
             living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,
                     filter, saving ? 0.5f : 1f, mediaFrame == null);
