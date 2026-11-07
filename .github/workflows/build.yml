@@ -123,3 +123,23 @@ jobs:
         with:
           name: device-test-results
           path: device-output/
+
+      # The same results on one rolling pre-release, which is easy to download from
+      # anywhere. Pre-releases are never "latest", so the in-app updater ignores it.
+      - name: Zip results
+        if: always()
+        run: cd device-output && zip -qr ../device-results.zip .
+
+      - name: Publish to the CI screenshots pre-release
+        if: always()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-screenshots
+          name: CI screenshots
+          prerelease: true
+          make_latest: false
+          body: |
+            Screenshots and logs from the latest emulator test run (not an app release).
+            Updated automatically on every build.
+          files: device-results.zip
+          overwrite_files: true
