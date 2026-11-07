@@ -9,6 +9,9 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.Choreographer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -35,6 +38,8 @@ public class MainActivity extends Activity {
     private static final int REQUEST_PAINT = 3;
     private static final int REQUEST_DIAGNOSTICS = 6;
     private static final int REQUEST_SUBJECT = 7;
+    private static final int REQUEST_SAVE_CLIP = 8;
+    private static final long CLIP_MS = 6000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -63,6 +68,11 @@ public class MainActivity extends Activity {
     private PreviewView.FramingListener framing;
     private android.app.Dialog fullScreen;
     private android.app.Dialog tourCard;
+    /** A clip being recorded, or null. */
+    private ClipRecorder clip;
+    private android.app.AlertDialog clipDialog;
+    /** A finished clip waiting to be saved where the user picks (Android 9 and older). */
+    private java.io.File pendingClip;
 
     // Undo history of the editor's settings (as saved JSON), newest last.
     private static final int MAX_HISTORY = 40;
@@ -233,6 +243,13 @@ public class MainActivity extends Activity {
 
         LinearLayout looks = ui.section("Looks");
         looksUi.build(ui, looks);
+
+        Button record = new Button(this);
+        record.setText("Record a clip (6 s)");
+        record.setOnClickListener(v -> recordClip());
+        looks.addView(record, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ui.hint(looks, "Records the wallpaper reacting to what's playing, as a video to share (no sound).");
 
         LinearLayout fit = ui.section("Image fit");
         ui.choiceColumn(fit, new String[] {"Fill (crop to fill the screen)", "Fit (show the whole image)",
@@ -632,6 +649,10 @@ public class MainActivity extends Activity {
         super.onPause();
         resumed = false;
         mainHandler.removeCallbacks(tempoTicker);
+        if (clip != null) {
+            // Leaving the editor ends the clip early; what was recorded is kept.
+            endClip();
+        }
         if (fullScreen != null) {
             fullScreen.dismiss();
         }
@@ -981,6 +1002,20 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_SAVE_CLIP) {
+            java.io.File file = pendingClip;
+            pendingClip = null;
+            if (resultCode == RESULT_OK && data != null && data.getData() != null && file != null) {
+                Uri target = data.getData();
+                executor.execute(() -> {
+                    boolean ok = copyTo(file, target);
+                    file.delete();
+                    mainHandler.post(() -> Toast.makeText(this, ok ? "Clip saved" : "Couldn't save the clip",
+                            Toast.LENGTH_SHORT).show());
+                });
+            }
+            return;
+        }
         if (requestCode == REQUEST_DIAGNOSTICS) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
                 finishDiagnostics(data.getData());
@@ -1381,6 +1416,162 @@ public class MainActivity extends Activity {
             return;
         }
         mainHandler.post(() -> LookShare.offer(this, look, () -> looksUi.refresh()));
+    }
+
+    /**
+     * Records a few seconds of the wallpaper as it reacts to whatever is
+     * playing, into a video (no sound) the user can keep and share.
+     */
+    private void recordClip() {
+        if (clip != null) {
+            return;
+        }
+        DisplayMetrics dm = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getRealMetrics(dm);
+        int[] size = ClipRecorder.size(720, dm.widthPixels, dm.heightPixels);
+        java.io.File out = new java.io.File(getCacheDir(), "clip.mp4");
+        try {
+            clip = new ClipRecorder(out, size[0], size[1], 30);
+        } catch (java.io.IOException | RuntimeException e) {
+            Log.w("MainActivity", "Can't record", e);
+            Toast.makeText(this, "This phone can't record clips.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        // The clip drives the shared renderer; the small preview rests meanwhile.
+        preview.setRunning(false);
+        clipDialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Recording")
+                .setMessage("Play some music! " + CLIP_MS / 1000 + " s left")
+                .setCancelable(false)
+                .setNegativeButton("Stop", (d, w) -> endClip())
+                .show();
+        long start = SystemClock.uptimeMillis();
+        long[] last = {start};
+        ClipRecorder recorder = clip;
+        Choreographer.getInstance().postFrameCallback(new Choreographer.FrameCallback() {
+            @Override
+            public void doFrame(long frameTimeNanos) {
+                if (clip != recorder) {
+                    return;
+                }
+                long now = SystemClock.uptimeMillis();
+                if (now - start >= CLIP_MS) {
+                    endClip();
+                    return;
+                }
+                // 30 frames a second, whatever the screen's refresh rate.
+                if (now - last[0] >= 31) {
+                    float dt = Math.min(0.1f, (now - last[0]) / 1000f);
+                    last[0] = now;
+                    analyzer.update(dt);
+                    try {
+                        recorder.frame((canvas, w, h) -> renderer.draw(canvas, w, h, analyzer, settings, dt));
+                    } catch (RuntimeException e) {
+                        Log.w("MainActivity", "Recording failed", e);
+                        endClip();
+                        return;
+                    }
+                    long left = (CLIP_MS - (now - start) + 999) / 1000;
+                    clipDialog.setMessage("Play some music! " + left + " s left");
+                }
+                Choreographer.getInstance().postFrameCallback(this);
+            }
+        });
+    }
+
+    private void endClip() {
+        ClipRecorder recorder = clip;
+        if (recorder == null) {
+            return;
+        }
+        clip = null;
+        if (clipDialog != null && clipDialog.isShowing()) {
+            clipDialog.dismiss();
+        }
+        preview.setRunning(resumed);
+        if (recorder.frames() < 15) {
+            recorder.cancel();
+            Toast.makeText(this, "The clip was too short to keep.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        executor.execute(() -> {
+            java.io.File file = recorder.finish();
+            Uri saved = file != null && android.os.Build.VERSION.SDK_INT >= 29 ? saveToMovies(file) : null;
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                if (file == null) {
+                    Toast.makeText(this, "Couldn't record the clip.", Toast.LENGTH_LONG).show();
+                } else if (saved != null) {
+                    file.delete();
+                    new android.app.AlertDialog.Builder(this)
+                            .setTitle("Clip saved")
+                            .setMessage("It's in your videos (Movies/Resona).")
+                            .setPositiveButton("Share", (d, w) -> {
+                                Intent send = new Intent(Intent.ACTION_SEND).setType("video/mp4")
+                                        .putExtra(Intent.EXTRA_STREAM, saved)
+                                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                                startActivity(Intent.createChooser(send, "Share clip"));
+                            })
+                            .setNegativeButton("Done", null)
+                            .show();
+                } else {
+                    // Older Android: let the user pick where it goes.
+                    pendingClip = file;
+                    Intent pick = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("video/mp4")
+                            .putExtra(Intent.EXTRA_TITLE, "Resona clip.mp4");
+                    startActivityForResult(pick, REQUEST_SAVE_CLIP);
+                }
+            });
+        });
+    }
+
+    /** Copies the clip into the phone's videos (Movies/Resona); Android 10+. */
+    @android.annotation.TargetApi(29)
+    private Uri saveToMovies(java.io.File file) {
+        android.content.ContentResolver resolver = getContentResolver();
+        android.content.ContentValues values = new android.content.ContentValues();
+        String stamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US)
+                .format(new java.util.Date());
+        values.put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "Resona_" + stamp + ".mp4");
+        values.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "video/mp4");
+        values.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
+                android.os.Environment.DIRECTORY_MOVIES + "/Resona");
+        values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
+        Uri uri = resolver.insert(android.provider.MediaStore.Video.Media.getContentUri(
+                android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY), values);
+        if (uri == null) {
+            return null;
+        }
+        if (!copyTo(file, uri)) {
+            resolver.delete(uri, null, null);
+            return null;
+        }
+        values.clear();
+        values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0);
+        resolver.update(uri, values, null, null);
+        return uri;
+    }
+
+    private boolean copyTo(java.io.File file, Uri target) {
+        try (java.io.InputStream in = new java.io.FileInputStream(file);
+             java.io.OutputStream out = getContentResolver().openOutputStream(target)) {
+            if (out == null) {
+                return false;
+            }
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+            }
+            return true;
+        } catch (java.io.IOException e) {
+            Log.w("MainActivity", "Couldn't save the clip", e);
+            return false;
+        }
     }
 
     /** Once the tour is over, ask for audio access if it's still needed. */
