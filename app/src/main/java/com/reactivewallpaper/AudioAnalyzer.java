@@ -65,6 +65,18 @@ final class AudioAnalyzer {
     /** Typical strength of detected beats, for the ones the grid fills in. */
     private float typicalBeat = 0.8f;
 
+    /** This analyzer's own clock, or null for the shared {@link #clock}. */
+    private LongSupplier ownClock;
+
+    /** Runs this analyzer on its own simulated time (e.g. for rendering previews off-screen). */
+    void useClock(LongSupplier clock) {
+        ownClock = clock;
+    }
+
+    private long now() {
+        return ownClock != null ? ownClock.getAsLong() : clock.getAsLong();
+    }
+
     AudioAnalyzer(int bandCount) {
         setBandCount(bandCount);
     }
@@ -119,7 +131,7 @@ final class AudioAnalyzer {
                 history[slot] = new float[mags.length];
             }
             System.arraycopy(mags, 0, history[slot], 0, mags.length);
-            historyTime[slot] = clock.getAsLong();
+            historyTime[slot] = now();
             historyRate[slot] = sampleRate;
             historyHead = slot;
             submitted++;
@@ -128,7 +140,7 @@ final class AudioAnalyzer {
 
     /** Advances by dt seconds using the audio frame that is due now. */
     void update(float dt) {
-        long now = clock.getAsLong();
+        long now = now();
         long due = now - delayMs;
         int binCount = 0;
         int rate = 0;
@@ -305,12 +317,12 @@ final class AudioAnalyzer {
 
     /** The song's tempo in beats per minute, or 0 while it isn't known. */
     float bpm() {
-        return tempo.isLockedAt(clock.getAsLong() - delayMs) ? tempo.bpm() : 0f;
+        return tempo.isLockedAt(now() - delayMs) ? tempo.bpm() : 0f;
     }
 
     /** 0 on each beat of the learned tempo, rising to 1 before the next; 0 while unknown. */
     float beatPhase() {
-        long due = clock.getAsLong() - delayMs;
+        long due = now() - delayMs;
         return tempo.isLockedAt(due) ? tempo.phaseAt(due) : 0f;
     }
 

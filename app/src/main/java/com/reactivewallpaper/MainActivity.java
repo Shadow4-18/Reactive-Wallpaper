@@ -39,6 +39,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_DIAGNOSTICS = 6;
     private static final int REQUEST_SUBJECT = 7;
     private static final int REQUEST_SAVE_CLIP = 8;
+    private static final int REQUEST_GALLERY = 9;
     private static final long CLIP_MS = 6000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -244,6 +245,12 @@ public class MainActivity extends Activity {
         LinearLayout looks = ui.section("Looks");
         looksUi.build(ui, looks);
 
+        Button gallery = new Button(this);
+        gallery.setText("Browse the look gallery");
+        gallery.setOnClickListener(v -> startActivityForResult(new Intent(this, GalleryActivity.class)
+                .putExtra(GalleryActivity.EXTRA_CURRENT, LookCode.encode("My look", settings)), REQUEST_GALLERY));
+        looks.addView(gallery, 0, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         Button record = new Button(this);
         record.setText("Record a clip (6 s)");
         record.setOnClickListener(v -> recordClip());
@@ -1002,6 +1009,24 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_GALLERY) {
+            LookCode.Look look = resultCode == RESULT_OK && data != null
+                    ? LookCode.decode(data.getStringExtra(GalleryActivity.EXTRA_CODE)) : null;
+            if (look != null) {
+                // Like loading a saved look: the picture, its framing and this phone's settings stay.
+                WallpaperSettings next = look.settings.keepDeviceSettingsFrom(settings);
+                next.saveDraft(this);
+                settings = next;
+                applyAudioSettings();
+                preview.setSettings(settings);
+                buildControls();
+                updateArtSource();
+                updateApplyState();
+                Toast.makeText(this, "Loaded “" + look.name + "”. Set as wallpaper to apply it.",
+                        Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
         if (requestCode == REQUEST_SAVE_CLIP) {
             java.io.File file = pendingClip;
             pendingClip = null;

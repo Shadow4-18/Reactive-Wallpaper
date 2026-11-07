@@ -143,3 +143,36 @@ jobs:
             Updated automatically on every build.
           files: device-results.zip
           overwrite_files: true
+
+  # The look gallery list (gallery/looks.json) on a rolling pre-release the app
+  # downloads from. Pre-releases are never "latest", so the updater ignores it.
+  gallery:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the gallery list
+        run: |
+          python3 - <<'PY'
+          import json
+          looks = json.load(open('gallery/looks.json'))['looks']
+          assert looks, 'empty gallery'
+          for look in looks:
+              assert look['name'] and look['code'].startswith('resona://look/'), look
+          print(len(looks), 'looks')
+          PY
+
+      - name: Publish the gallery list
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gallery
+          name: Look gallery
+          prerelease: true
+          make_latest: false
+          body: |
+            The looks in Resona's look gallery (not an app release). Updated from
+            gallery/looks.json on every push.
+          files: gallery/looks.json
+          overwrite_files: true
+

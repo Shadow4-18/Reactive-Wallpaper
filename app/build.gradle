@@ -50,6 +50,13 @@ android {
         checkReleaseBuilds = false
     }
 
+    // Device tests read the published look gallery list to render previews of it.
+    sourceSets {
+        androidTest {
+            assets.srcDirs += '../gallery'
+        }
+    }
+
     testOptions {
         // Plain JVM tests cover pure logic; Android calls there just return defaults.
         unitTests.returnDefaultValues = true
