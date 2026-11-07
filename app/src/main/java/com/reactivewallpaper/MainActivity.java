@@ -40,6 +40,9 @@ public class MainActivity extends Activity {
     private static final int REQUEST_SUBJECT = 7;
     private static final int REQUEST_SAVE_CLIP = 8;
     private static final int REQUEST_GALLERY = 9;
+    private static final int REQUEST_CAPTURE = 11;
+    /** Whether the playing-sound capture service is running for the current clip. */
+    private boolean capturingSound;
     private static final long CLIP_MS = 6000;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -253,10 +256,11 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         Button record = new Button(this);
         record.setText("Record a clip (6 s)");
-        record.setOnClickListener(v -> recordClip());
+        record.setOnClickListener(v -> chooseClipSound());
         looks.addView(record, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        ui.hint(looks, "Records the wallpaper reacting to what's playing, as a video to share (no sound).");
+        ui.hint(looks, "Records the wallpaper reacting to what's playing, as a video to share, with the music "
+                + "if you like.");
 
         LinearLayout fit = ui.section("Image fit");
         ui.choiceColumn(fit, new String[] {"Fill (crop to fill the screen)", "Fit (show the whole image)",
@@ -1009,6 +1013,19 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_CAPTURE) {
+            if (resultCode == RESULT_OK && data != null) {
+                capturingSound = true;
+                SoundCaptureService.start(this, resultCode, data, sound -> {
+                    if (sound == null) {
+                        Toast.makeText(this, "Couldn't get the playing sound (some apps don't allow it), so "
+                                + "this clip has none.", Toast.LENGTH_LONG).show();
+                    }
+                    recordClip(sound);
+                });
+            }
+            return;
+        }
         if (requestCode == REQUEST_GALLERY) {
             LookCode.Look look = resultCode == RESULT_OK && data != null
                     ? LookCode.decode(data.getStringExtra(GalleryActivity.EXTRA_CODE)) : null;
@@ -1462,8 +1479,64 @@ public class MainActivity extends Activity {
      * Records a few seconds of the wallpaper as it reacts to whatever is
      * playing, into a video (no sound) the user can keep and share.
      */
-    private void recordClip() {
+    private void chooseClipSound() {
         if (clip != null) {
+            return;
+        }
+        boolean canCapture = android.os.Build.VERSION.SDK_INT >= 29;
+        String[] options = canCapture
+                ? new String[] {"The music playing on this phone", "The microphone", "No sound"}
+                : new String[] {"The microphone", "No sound"};
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Sound in the clip")
+                .setItems(options, (d, which) -> {
+                    int choice = canCapture ? which : which + 1;
+                    if (choice == 0) {
+                        // Android asks permission each time; it covers sound only, not the screen.
+                        android.media.projection.MediaProjectionManager mpm =
+                                getSystemService(android.media.projection.MediaProjectionManager.class);
+                        Intent ask = android.os.Build.VERSION.SDK_INT >= 34
+                                ? mpm.createScreenCaptureIntent(
+                                        android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
+                                : mpm.createScreenCaptureIntent();
+                        startActivityForResult(ask, REQUEST_CAPTURE);
+                    } else if (choice == 1) {
+                        recordClip(micRecorder());
+                    } else {
+                        recordClip(null);
+                    }
+                })
+                .show();
+    }
+
+    /** The microphone, for a clip's sound; null if it can't be opened. */
+    private android.media.AudioRecord micRecorder() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return null;
+        }
+        int rate = 44100;
+        int size = Math.max(android.media.AudioRecord.getMinBufferSize(rate,
+                android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT) * 4,
+                16 * 1024);
+        try {
+            android.media.AudioRecord r = new android.media.AudioRecord(android.media.MediaRecorder.AudioSource.MIC,
+                    rate, android.media.AudioFormat.CHANNEL_IN_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT, size);
+            if (r.getState() == android.media.AudioRecord.STATE_INITIALIZED) {
+                return r;
+            }
+            r.release();
+        } catch (RuntimeException e) {
+            Log.w("MainActivity", "No microphone for the clip", e);
+        }
+        return null;
+    }
+
+    private void recordClip(android.media.AudioRecord sound) {
+        if (clip != null) {
+            if (sound != null) {
+                sound.release();
+            }
             return;
         }
         DisplayMetrics dm = new DisplayMetrics();
@@ -1471,8 +1544,9 @@ public class MainActivity extends Activity {
         int[] size = ClipRecorder.size(720, dm.widthPixels, dm.heightPixels);
         java.io.File out = new java.io.File(getCacheDir(), "clip.mp4");
         try {
-            clip = new ClipRecorder(out, size[0], size[1], 30);
+            clip = new ClipRecorder(out, size[0], size[1], 30, sound);
         } catch (java.io.IOException | RuntimeException e) {
+            stopSoundCapture();
             Log.w("MainActivity", "Can't record", e);
             Toast.makeText(this, "This phone can't record clips.", Toast.LENGTH_LONG).show();
             return;
@@ -1531,11 +1605,13 @@ public class MainActivity extends Activity {
         preview.setRunning(resumed);
         if (recorder.frames() < 15) {
             recorder.cancel();
+            stopSoundCapture();
             Toast.makeText(this, "The clip was too short to keep.", Toast.LENGTH_SHORT).show();
             return;
         }
         executor.execute(() -> {
             java.io.File file = recorder.finish();
+            mainHandler.post(this::stopSoundCapture);
             Uri saved = file != null && android.os.Build.VERSION.SDK_INT >= 29 ? saveToMovies(file) : null;
             mainHandler.post(() -> {
                 if (isDestroyed()) {
@@ -1567,6 +1643,13 @@ public class MainActivity extends Activity {
                 }
             });
         });
+    }
+
+    private void stopSoundCapture() {
+        if (capturingSound) {
+            capturingSound = false;
+            SoundCaptureService.stop(this);
+        }
     }
 
     /** Copies the clip into the phone's videos (Movies/Resona); Android 10+. */
