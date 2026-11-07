@@ -368,10 +368,17 @@ public class MainActivity extends Activity {
                     s.barCount = Math.round(v);
                     applyAudioSettings();
                 }, v -> String.valueOf(Math.round(v)));
+        Button findRing = new Button(this);
+        findRing.setText("Find the ring in my picture");
+        findRing.setOnClickListener(v -> alignRingToPicture());
+        viz.addView(findRing, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout circle = ui.group(viz);
-        ui.slider(circle, "Ring position (up / down)", 0.2f, 0.8f, () -> s.circleY, v -> s.circleY = v,
+        ui.slider(circle, "Ring position (up / down)", 0.1f, 0.9f, () -> s.circleY, v -> s.circleY = v,
                 Controls::percent);
-        ui.slider(circle, "Ring size", 0.15f, 0.45f, () -> s.circleSize, v -> s.circleSize = v, Controls::percent);
+        ui.slider(circle, "Ring position (left / right)", 0.1f, 0.9f, () -> s.circleX, v -> s.circleX = v,
+                Controls::percent);
+        ui.slider(circle, "Ring size", 0.08f, 0.5f, () -> s.circleSize, v -> s.circleSize = v, Controls::percent);
         circleOptions = circle;
         ui.label(viz, "Color");
         ui.choice(viz, new String[] {"From image", "Rainbow", "Custom"},
@@ -779,6 +786,71 @@ public class MainActivity extends Activity {
                 loadPreviewImage();
             });
         });
+    }
+
+    /**
+     * Looks for a ring or circle in the picture and puts the ring visualizer on
+     * it, where it will be on the phone's screen with the current framing.
+     */
+    private void alignRingToPicture() {
+        if (!ImageStore.hasDraftImage(this) || (settings.albumArt && art != null)) {
+            Toast.makeText(this, "Choose a picture first.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        DisplayMetrics dm = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getRealMetrics(dm);
+        int screenW = dm.widthPixels;
+        int screenH = dm.heightPixels;
+        Toast.makeText(this, "Looking for a ring…", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            Bitmap image = ImageStore.load(ImageStore.draftFile(this), 480, 480);
+            RingFinder.Ring found = null;
+            int bw = 0;
+            int bh = 0;
+            if (image != null) {
+                float scale = 240f / Math.max(image.getWidth(), image.getHeight());
+                bw = Math.max(1, Math.round(image.getWidth() * scale));
+                bh = Math.max(1, Math.round(image.getHeight() * scale));
+                Bitmap small = Bitmap.createScaledBitmap(image, bw, bh, true);
+                int[] px = new int[bw * bh];
+                small.getPixels(px, 0, bw, 0, 0, bw, bh);
+                found = RingFinder.find(px, bw, bh);
+                if (small != image) {
+                    small.recycle();
+                }
+                image.recycle();
+            }
+            RingFinder.Ring ring = found;
+            int imageW = bw;
+            int imageH = bh;
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                if (ring == null) {
+                    Toast.makeText(this, "Couldn't find a clear ring or circle in this picture. "
+                            + "Use the ring sliders to place it.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                float[] fit = WallpaperRenderer.fit(imageW, imageH, screenW, screenH, settings, true);
+                float x = (screenW - imageW * fit[0]) / 2f + fit[2] + ring.x * fit[0];
+                float y = (screenH - imageH * fit[1]) / 2f + fit[3] + ring.y * fit[1];
+                float radius = ring.radius * (fit[0] + fit[1]) / 2f;
+                settings.circleX = clamp(x / screenW, 0.1f, 0.9f);
+                settings.circleY = clamp(y / screenH, 0.1f, 0.9f);
+                settings.circleSize = clamp(radius / Math.min(screenW, screenH), 0.08f, 0.5f);
+                if (!WallpaperSettings.isRing(settings.style)) {
+                    settings.style = WallpaperSettings.STYLE_CIRCLE;
+                }
+                saveDraft();
+                buildControls();
+                Toast.makeText(this, "Ring placed on the picture's ring.", Toast.LENGTH_SHORT).show();
+            });
+        });
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
     }
 
     private void updateTempoLabel() {

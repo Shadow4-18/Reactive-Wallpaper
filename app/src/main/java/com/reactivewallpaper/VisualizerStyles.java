@@ -131,7 +131,7 @@ final class VisualizerStyles {
             return;
         }
         orbSpin += dt * (0.15f + 0.6f * bass);
-        float cx = w / 2f;
+        float cx = w * s.circleX;
         float cy = h * s.circleY;
         float radius = Math.min(w, h) * s.circleSize * (0.85f + 0.18f * bass * s.vizHeight);
         int points = 96;

@@ -413,6 +413,51 @@ final class WallpaperRenderer {
 
         int bw = image.getWidth();
         int bh = image.getHeight();
+        float[] fit = fit(bw, bh, w, h, s, framed);
+        float sx = fit[0];
+        float sy = fit[1];
+        float panX = fit[2];
+        float panY = fit[3];
+        // Only a picture that covers the screen needs zooming to keep its edges hidden in motion.
+        boolean covers = bw * sx >= w - 1 && bh * sy >= h - 1
+                && Math.abs(panX) <= (bw * sx - w) / 2f + 1 && Math.abs(panY) <= (bh * sy - h) / 2f + 1;
+        if (covers && (!framed || s.hideEdges)) {
+            zoom += 2f * reach;
+            if (angle != 0f) {
+                // Turning a tall rectangle exposes its corners; grow just enough to cover them.
+                double rad = Math.toRadians(Math.abs(angle));
+                float aspect = Math.max(w, h) / (float) Math.max(1, Math.min(w, h));
+                zoom += (float) (Math.cos(rad) + Math.sin(rad) * aspect) - 1f;
+            }
+        }
+
+        drawBackdrop(canvas, w, h, s, covers);
+        matrix.setScale(sx, sy);
+        matrix.postTranslate((w - bw * sx) / 2f + panX + dx, (h - bh * sy) / 2f + panY + dy);
+        // Zoom around the ring when there is one, so artwork under it stays lined up.
+        boolean ring = WallpaperSettings.isRing(s.style);
+        float pivotX = ring ? w * s.circleX : w / 2f;
+        float pivotY = ring ? h * s.circleY : h / 2f;
+        matrix.postScale(zoom, zoom, pivotX, pivotY);
+        if (angle != 0f) {
+            matrix.postRotate(angle, pivotX, pivotY);
+        }
+        if (mediaFrame != null) {
+            updateMediaMatrix();
+            canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
+        } else {
+            // When the subject moves apart from the background, show the background without it.
+            boolean lifted = subjectShown(s) && s.subjectDepth > 0.01f;
+            canvas.drawBitmap(lifted ? subject.plate : image, matrix, imagePaint);
+        }
+    }
+
+    /**
+     * How a {@code bw} x {@code bh} picture is placed on a {@code w} x {@code h}
+     * screen before any motion: {scaleX, scaleY, panX, panY}, the picture being
+     * centered and then moved by the pan.
+     */
+    static float[] fit(int bw, int bh, int w, int h, WallpaperSettings s, boolean framed) {
         float sx;
         float sy;
         switch (framed ? s.fitMode : WallpaperSettings.FIT_FILL) {
@@ -438,36 +483,7 @@ final class WallpaperRenderer {
         sy *= userZoom;
         float panX = framed ? s.imagePanX * w : 0f;
         float panY = framed ? s.imagePanY * h : 0f;
-        // Only a picture that covers the screen needs zooming to keep its edges hidden in motion.
-        boolean covers = bw * sx >= w - 1 && bh * sy >= h - 1
-                && Math.abs(panX) <= (bw * sx - w) / 2f + 1 && Math.abs(panY) <= (bh * sy - h) / 2f + 1;
-        if (covers && (!framed || s.hideEdges)) {
-            zoom += 2f * reach;
-            if (angle != 0f) {
-                // Turning a tall rectangle exposes its corners; grow just enough to cover them.
-                double rad = Math.toRadians(Math.abs(angle));
-                float aspect = Math.max(w, h) / (float) Math.max(1, Math.min(w, h));
-                zoom += (float) (Math.cos(rad) + Math.sin(rad) * aspect) - 1f;
-            }
-        }
-
-        drawBackdrop(canvas, w, h, s, covers);
-        matrix.setScale(sx, sy);
-        matrix.postTranslate((w - bw * sx) / 2f + panX + dx, (h - bh * sy) / 2f + panY + dy);
-        // Zoom around the ring when there is one, so artwork under it stays lined up.
-        float pivotY = WallpaperSettings.isRing(s.style) ? h * s.circleY : h / 2f;
-        matrix.postScale(zoom, zoom, w / 2f, pivotY);
-        if (angle != 0f) {
-            matrix.postRotate(angle, w / 2f, pivotY);
-        }
-        if (mediaFrame != null) {
-            updateMediaMatrix();
-            canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
-        } else {
-            // When the subject moves apart from the background, show the background without it.
-            boolean lifted = subjectShown(s) && s.subjectDepth > 0.01f;
-            canvas.drawBitmap(lifted ? subject.plate : image, matrix, imagePaint);
-        }
+        return new float[] {sx, sy, panX, panY};
     }
 
     /** Fills what the picture may not cover: black, or a dimmed, very blurred copy of it. */
@@ -603,7 +619,7 @@ final class WallpaperRenderer {
         if (n == 0) {
             return;
         }
-        float cx = w / 2f;
+        float cx = w * s.circleX;
         float cy = h * s.circleY;
         float radius = Math.min(w, h) * s.circleSize * (1f + 0.1f * bass * s.vizHeight);
         int spokes = n * 2;

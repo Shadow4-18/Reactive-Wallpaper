@@ -250,4 +250,29 @@ public class RenderSnapshotTest {
             tiltX = 0f;
         }
     }
+
+    @Test
+    public void ringAutoAlign() throws Exception {
+        Bitmap image = TestScenes.neon(1200, 2660);
+        Bitmap small = Bitmap.createScaledBitmap(image, 108, 240, true);
+        int[] px = new int[108 * 240];
+        small.getPixels(px, 0, 108, 0, 0, 108, 240);
+        RingFinder.Ring ring = RingFinder.find(px, 108, 240);
+        org.junit.Assert.assertNotNull("no ring found in the test scene", ring);
+        // The scene's outer ring: centered, 58% down, radius 36% of the width.
+        org.junit.Assert.assertEquals(54f, ring.x, 4f);
+        org.junit.Assert.assertEquals(0.58f * 240, ring.y, 4f);
+        org.junit.Assert.assertEquals(0.36f * 108, ring.radius, 4f);
+        WallpaperSettings base = new WallpaperSettings();
+        float[] fit = WallpaperRenderer.fit(108, 240, W, H, base, true);
+        float x = (W - 108 * fit[0]) / 2f + fit[2] + ring.x * fit[0];
+        float y = (H - 240 * fit[1]) / 2f + fit[3] + ring.y * fit[1];
+        float size = ring.radius * fit[0] / Math.min(W, H);
+        snap("10_ring_auto_aligned", image, true, s -> {
+            s.style = WallpaperSettings.STYLE_CIRCLE;
+            s.circleX = x / W;
+            s.circleY = y / H;
+            s.circleSize = size;
+        });
+    }
 }

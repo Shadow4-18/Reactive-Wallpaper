@@ -151,6 +151,8 @@ final class WallpaperSettings {
     int barCount = 48;
     /** Ring center as a fraction of screen height, 0.2 .. 0.8 */
     float circleY = 0.5f;
+    /** Ring center across the screen, 0..1. */
+    float circleX = 0.5f;
     /** Ring radius as a fraction of screen width, 0.15 .. 0.45 */
     float circleSize = 0.27f;
     int colorMode = COLOR_AUTO;
@@ -361,6 +363,7 @@ final class WallpaperSettings {
         s.vizOpacity = p.getFloat("vizOpacity", s.vizOpacity);
         s.barCount = Math.max(MIN_BARS, Math.min(MAX_BARS, p.getInt("barCount", s.barCount)));
         s.circleY = p.getFloat("circleY", s.circleY);
+        s.circleX = p.getFloat("circleX", s.circleX);
         s.circleSize = p.getFloat("circleSize", s.circleSize);
         s.colorMode = p.getInt("colorMode", s.colorMode);
         s.hue = p.getFloat("hue", s.hue);
@@ -464,6 +467,7 @@ final class WallpaperSettings {
         w.putFloat("vizOpacity", vizOpacity);
         w.putInt("barCount", barCount);
         w.putFloat("circleY", circleY);
+        w.putFloat("circleX", circleX);
         w.putFloat("circleSize", circleSize);
         w.putInt("colorMode", colorMode);
         w.putFloat("hue", hue);
