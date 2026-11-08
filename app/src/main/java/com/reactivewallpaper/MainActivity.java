@@ -474,6 +474,12 @@ public class MainActivity extends Activity {
         }, Controls::percent);
         ui.slider(depth, "Home-screen swipe", 0f, 2f, () -> s.swipeParallax, v -> s.swipeParallax = v,
                 Controls::percent);
+        ui.slider(depth, "3D depth from the picture", 0f, 1f, () -> s.depth3d, v -> s.depth3d = v,
+                Controls::percent);
+        ui.toggle(depth, "Slowly look around (shows the depth without tilting)", () -> s.depthDrift,
+                v -> s.depthDrift = v);
+        ui.hint(depth, "Guesses what's near and far in a still picture (a marked subject is nearest), so "
+                + "near parts move more than far ones as you tilt, swipe or look around.");
 
         LinearLayout beat = ui.section("Beat effects", true);
         ui.slider(beat, "Pulse (zoom with the bass)", 0f, 2f, () -> s.pulse, v -> s.pulse = v, Controls::percent);

@@ -245,6 +245,13 @@ final class LivingImage {
      * @param particleScale fraction of the particle count to draw (lower to save battery)
      * @param drawGlow false for moving backgrounds, whose glow is drawn from each frame instead
      */
+    private DepthWarp warp;
+
+    /** Draws the glow through the picture's depth warp too (null for flat), so it stays on its spots. */
+    void setWarp(DepthWarp warp) {
+        this.warp = warp;
+    }
+
     void draw(Canvas canvas, Matrix imageMatrix, AudioAnalyzer audio, WallpaperSettings s,
               float dt, float density, float particleDx, float particleDy,
               ColorFilter colorFilter, float particleScale, boolean drawGlow) {
@@ -289,7 +296,11 @@ final class LivingImage {
         layerMatrix.preScale(imageWidth / (float) b.getWidth(), imageHeight / (float) b.getHeight());
         while (amount > 0.01f) {
             addPaint.setAlpha((int) (Math.min(1f, amount) * 255));
-            canvas.drawBitmap(b, layerMatrix, addPaint);
+            if (warp != null) {
+                warp.draw(canvas, b, layerMatrix, addPaint);
+            } else {
+                canvas.drawBitmap(b, layerMatrix, addPaint);
+            }
             amount -= 1f;
         }
     }

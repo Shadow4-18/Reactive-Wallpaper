@@ -120,6 +120,10 @@ final class WallpaperSettings {
     // Parallax.
     float tiltParallax = 0.6f;
     float swipeParallax = 0.5f;
+    /** 3D depth guessed from the picture: near parts move more than far ones, 0 .. 1. */
+    float depth3d = 0f;
+    /** A slow look-around, so the depth shows without tilting the phone. */
+    boolean depthDrift = true;
 
     // Image motion.
     float pulse = 1f;
@@ -543,6 +547,8 @@ final class WallpaperSettings {
         s.albumArtStyle = p.getInt("albumArtStyle", s.albumArtStyle);
         s.tiltParallax = p.getFloat("tiltParallax", s.tiltParallax);
         s.swipeParallax = p.getFloat("swipeParallax", s.swipeParallax);
+        s.depth3d = p.getFloat("depth3d", s.depth3d);
+        s.depthDrift = p.getBoolean("depthDrift", s.depthDrift);
 
         s.pulse = p.getFloat("pulseAmount", p.getBoolean("pulse", true) ? s.pulse : 0f);
         s.sway = p.getFloat("sway", oldAmbient ? s.sway : 0f);
@@ -667,6 +673,8 @@ final class WallpaperSettings {
         w.putInt("albumArtStyle", albumArtStyle);
         w.putFloat("tiltParallax", tiltParallax);
         w.putFloat("swipeParallax", swipeParallax);
+        w.putFloat("depth3d", depth3d);
+        w.putBoolean("depthDrift", depthDrift);
         w.putFloat("pulseAmount", pulse);
         w.putFloat("sway", sway);
         w.putFloat("swaySpeed", swaySpeed);

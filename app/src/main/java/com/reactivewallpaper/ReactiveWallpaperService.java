@@ -623,6 +623,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             if (idle && !slot.isFading() && !slot.isBusy()) {
                 boolean moving = s.mediaType != WallpaperSettings.MEDIA_IMAGE && !(s.albumArt && art != null);
                 boolean animated = moving || s.breathe > 0f || s.sparkleAmount > 0f || s.sway > 0f
+                        || (s.depth3d > 0f && s.depthDrift)
                         || s.colorCycle > 0f || s.tiltParallax > 0f;
                 if (animated) {
                     delay = saving ? SAVER_AMBIENT_FRAME_MS : AMBIENT_FRAME_MS;

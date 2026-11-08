@@ -132,6 +132,7 @@ final class WallpaperRenderer {
         }
         // A subject belongs to the picture it was cut from.
         setSubject(null);
+        depthWarp = null;
         image = bitmap;
         mask = glowMask;
         accentHues = bitmap != null ? ImageStore.accentHues(bitmap) : DEFAULT_HUES;
@@ -151,6 +152,8 @@ final class WallpaperRenderer {
      * or null. Takes ownership. Call after {@link #setImage}.
      */
     void setSubject(SubjectLayer layer) {
+        // The depth guess puts the subject in front, so it's redone with the new one.
+        depthWarp = null;
         if (subject != null && subject != layer) {
             subject.release();
         }
@@ -367,6 +370,7 @@ final class WallpaperRenderer {
             }
             float flare = taps != null ? taps.flare() : 0f;
             float moment = moments != null ? moments.glowBoost() : 0f;
+            living.setWarp(depthActive ? depthWarp : null);
             living.setExtraScale((framed ? 1f : ALBUM_ART_GLOW) * (1f + 6f * flare + moment));
             // Particles sit "in front" of the picture, so they move further with parallax.
             living.draw(canvas, matrix, audio, s, dt, density, parallaxX * 1.6f, parallaxY * 1.6f,
@@ -442,6 +446,9 @@ final class WallpaperRenderer {
                 break;
         }
     }
+
+    private DepthWarp depthWarp;
+    private boolean depthActive;
 
     private WeatherLayer weather;
     private Weather.State liveWeather = new Weather.State(Weather.CLEAR, 0f, 0f);
@@ -596,6 +603,7 @@ final class WallpaperRenderer {
         }
 
         ringFollows = false;
+        depthActive = false;
         if (image == null) {
             if (gradientHeight != h) {
                 backgroundPaint.setShader(new LinearGradient(0, 0, 0, h,
@@ -616,6 +624,17 @@ final class WallpaperRenderer {
         // Only a picture that covers the screen needs zooming to keep its edges hidden in motion.
         boolean covers = bw * sx >= w - 1 && bh * sy >= h - 1
                 && Math.abs(panX) <= (bw * sx - w) / 2f + 1 && Math.abs(panY) <= (bh * sy - h) / 2f + 1;
+        depthActive = s.depth3d > 0f && mediaFrame == null && !(framed && !covers);
+        if (depthActive) {
+            if (depthWarp == null) {
+                depthWarp = DepthWarp.estimate(image, subject);
+            }
+            // Near parts shift past far ones by twice the parallax, plus a slow look-around.
+            float orbitX = s.depthDrift ? (float) Math.sin(time * 0.29f) * 0.022f * w : 0f;
+            float orbitY = s.depthDrift ? (float) Math.cos(time * 0.21f) * 0.012f * h : 0f;
+            depthWarp.setOffset(s.depth3d * (2.2f * parallaxX + orbitX), s.depth3d * (2.2f * parallaxY + orbitY));
+            reach += s.depth3d * (0.03f * s.tiltParallax + 0.014f);
+        }
         if (covers && (!framed || s.hideEdges)) {
             zoom += 2f * reach;
             if (angle != 0f) {
@@ -651,7 +670,12 @@ final class WallpaperRenderer {
         } else {
             // When the subject moves apart from the background, show the background without it.
             boolean lifted = subjectShown(s) && s.subjectDepth > 0.01f;
-            canvas.drawBitmap(lifted ? subject.plate : image, matrix, imagePaint);
+            Bitmap background = lifted ? subject.plate : image;
+            if (depthActive) {
+                depthWarp.draw(canvas, background, matrix, imagePaint);
+            } else {
+                canvas.drawBitmap(background, matrix, imagePaint);
+            }
         }
     }
 

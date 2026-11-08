@@ -265,6 +265,11 @@ public class RenderSnapshotTest {
                 s.subjectDepth = 1f;
                 s.tiltParallax = 1f;
             });
+            snap("6C_depth_tilted", image, true, s -> {
+                s.depth3d = 1f;
+                s.depthDrift = false;
+                s.tiltParallax = 2f;
+            });
             tiltX = 0f;
             snap("62_subject_off", image, true, s -> s.subjectFront = false);
             snap("6A_subject_neon_outline", image, true, s -> {
