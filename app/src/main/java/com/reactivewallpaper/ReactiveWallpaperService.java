@@ -437,6 +437,9 @@ public class ReactiveWallpaperService extends WallpaperService {
                         still ? loadSubject(image, look.picture) : null,
                         true);
             }
+            if (!useArt && s.mediaType != WallpaperSettings.MEDIA_IMAGE) {
+                background.track = SubjectTrack.read(look.picture.subject);
+            }
             slot.setBackground(key, background, fade && slot.hasBackground());
         }
 

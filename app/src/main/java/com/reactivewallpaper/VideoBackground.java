@@ -143,6 +143,18 @@ final class VideoBackground implements MediaBackground {
     }
 
     @Override
+    public long positionMs() {
+        if (!prepared) {
+            return -1;
+        }
+        try {
+            return player.getCurrentPosition();
+        } catch (IllegalStateException e) {
+            return -1;
+        }
+    }
+
+    @Override
     public void setPlaying(boolean play) {
         playing = play;
         if (!prepared) {

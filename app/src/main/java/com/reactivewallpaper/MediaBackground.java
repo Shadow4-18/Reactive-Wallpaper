@@ -31,6 +31,11 @@ interface MediaBackground {
 
     int height();
 
+    /** How far into the loop it is now, in ms, or -1 if unknown (for following a tracked subject). */
+    default long positionMs() {
+        return -1;
+    }
+
     /** Called while the wallpaper is hidden or shown again. */
     void setPlaying(boolean playing);
 

@@ -16,12 +16,17 @@ final class AnimatedBackground implements MediaBackground {
     /** Large animations are drawn smaller; the wallpaper scales them up. */
     private static final int MAX_SIDE = 1280;
 
-    private final AnimatedImageDrawable drawable;
+    private AnimatedImageDrawable drawable;
+    private final File file;
+    /** When the animation last began from its first frame (uptime ms). */
+    private long startedAt = android.os.SystemClock.uptimeMillis();
+    private boolean stopped;
     private final Bitmap frame;
     private final Canvas canvas;
 
-    private AnimatedBackground(AnimatedImageDrawable drawable) {
+    private AnimatedBackground(AnimatedImageDrawable drawable, File file) {
         this.drawable = drawable;
+        this.file = file;
         int w = drawable.getIntrinsicWidth();
         int h = drawable.getIntrinsicHeight();
         float scale = Math.min(1f, MAX_SIDE / (float) Math.max(w, h));
@@ -37,7 +42,7 @@ final class AnimatedBackground implements MediaBackground {
     /** Null if the file is a still image (then the plain image path is used). */
     static AnimatedBackground open(File file) throws IOException {
         Drawable d = ImageDecoder.decodeDrawable(ImageDecoder.createSource(file));
-        return d instanceof AnimatedImageDrawable ? new AnimatedBackground((AnimatedImageDrawable) d) : null;
+        return d instanceof AnimatedImageDrawable ? new AnimatedBackground((AnimatedImageDrawable) d, file) : null;
     }
 
     /** True if the file is an animated GIF/WebP this phone can play. */
@@ -57,6 +62,26 @@ final class AnimatedBackground implements MediaBackground {
     }
 
     @Override
+    public long positionMs() {
+        return android.os.SystemClock.uptimeMillis() - startedAt;
+    }
+
+    private void restart() {
+        try {
+            Drawable d = ImageDecoder.decodeDrawable(ImageDecoder.createSource(file));
+            if (d instanceof AnimatedImageDrawable) {
+                AnimatedImageDrawable fresh = (AnimatedImageDrawable) d;
+                fresh.setBounds(drawable.getBounds());
+                fresh.setRepeatCount(AnimatedImageDrawable.REPEAT_INFINITE);
+                drawable = fresh;
+            }
+        } catch (IOException | RuntimeException e) {
+            // Keep the old one; the tracked subject may drift a little.
+        }
+        startedAt = android.os.SystemClock.uptimeMillis();
+    }
+
+    @Override
     public int width() {
         return frame.getWidth();
     }
@@ -69,9 +94,16 @@ final class AnimatedBackground implements MediaBackground {
     @Override
     public void setPlaying(boolean playing) {
         if (playing) {
+            if (stopped) {
+                // Begin again from the first frame, so the time into the loop is known exactly
+                // (a tracked subject follows it).
+                restart();
+            }
             drawable.start();
+            stopped = false;
         } else {
             drawable.stop();
+            stopped = true;
         }
     }
 

@@ -161,6 +161,7 @@ final class WallpaperRenderer {
     }
 
     void release() {
+        setSubjectTrack(null);
         setImage(null, null);
         setMedia(null);
         if (taps != null) {
@@ -384,15 +385,15 @@ final class WallpaperRenderer {
             taps.draw(canvas, dt, density);
         }
 
-        boolean subject = subjectShown(s);
+        boolean subject = subjectShown(s) || trackShown(s);
         if (subject && s.vizFront) {
             // The visualizer can sit in front of the subject instead of behind it.
-            drawSubject(canvas, s, bass);
+            drawAnySubject(canvas, s, bass);
             drawVisualizer(canvas, w, h, audio, s, bass, dt);
         } else {
             drawVisualizer(canvas, w, h, audio, s, bass, dt);
             if (subject) {
-                drawSubject(canvas, s, bass);
+                drawAnySubject(canvas, s, bass);
             }
         }
 
@@ -501,6 +502,91 @@ final class WallpaperRenderer {
     private VisualizerStyles.Palette palette(WallpaperSettings s) {
         paletteSettings = s;
         return palette;
+    }
+
+    private SubjectTrack track;
+    private Bitmap trackMask;
+    private Bitmap trackGlow;
+    private Bitmap trackRim;
+    private int[] trackPixels;
+    private final Matrix trackMatrix = new Matrix();
+    private final Paint trackCutPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+
+    /** Where the subject is through the video or GIF (see {@link SubjectTrack}), or null. */
+    void setSubjectTrack(SubjectTrack track) {
+        this.track = track;
+        for (Bitmap b : new Bitmap[] {trackMask, trackGlow, trackRim}) {
+            if (b != null) {
+                b.recycle();
+            }
+        }
+        trackMask = trackGlow = trackRim = null;
+        if (track != null) {
+            trackMask = Bitmap.createBitmap(track.width, track.height, Bitmap.Config.ARGB_8888);
+            trackGlow = Bitmap.createBitmap(track.width, track.height, Bitmap.Config.ARGB_8888);
+            trackRim = Bitmap.createBitmap(track.width, track.height, Bitmap.Config.ARGB_8888);
+            trackPixels = new int[track.width * track.height];
+            trackCutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_IN));
+        }
+    }
+
+    /** A video or GIF with a tracked subject, playing. */
+    private boolean trackShown(WallpaperSettings s) {
+        return track != null && s.subjectFront && mediaFrame != null && media != null && image != null
+                && media.positionMs() >= 0;
+    }
+
+    private void drawAnySubject(Canvas canvas, WallpaperSettings s, float bass) {
+        if (subjectShown(s)) {
+            drawSubject(canvas, s, bass);
+        } else {
+            drawTrackedSubject(canvas, s, bass);
+        }
+    }
+
+    /**
+     * The tracked subject of a video or GIF, where it is right now: the light
+     * behind it, the frame's subject drawn again over the visualizer, and its outline.
+     */
+    private void drawTrackedSubject(Canvas canvas, WallpaperSettings s, float bass) {
+        long at = media.positionMs();
+        trackMatrix.set(matrix);
+        trackMatrix.preScale(image.getWidth() / (float) track.width, image.getHeight() / (float) track.height);
+        if (s.subjectAura > 0f) {
+            track.fill(SubjectTrack.GLOW, at, trackPixels);
+            trackGlow.setPixels(trackPixels, 0, track.width, 0, 0, track.width, track.height);
+            auraMatrix.set(trackMatrix);
+            float grow = 1.04f + 0.06f * bass;
+            auraMatrix.postScale(grow, grow, canvas.getWidth() / 2f, canvas.getHeight() / 2f);
+            auraPaint.setXfermode(ADD);
+            int tint = colorAt(s, 0.5f);
+            if (tint != auraTint || auraPaint.getColorFilter() == null) {
+                auraTint = tint;
+                auraPaint.setColorFilter(new android.graphics.PorterDuffColorFilter(tint, PorterDuff.Mode.SRC_IN));
+            }
+            auraPaint.setAlpha((int) (255 * Math.min(1f, s.subjectAura * (0.3f + 0.9f * bass))));
+            canvas.drawBitmap(trackGlow, auraMatrix, auraPaint);
+        }
+        // The frame again, cut down to the subject, over everything drawn so far.
+        track.fill(SubjectTrack.MASK, at, trackPixels);
+        trackMask.setPixels(trackPixels, 0, track.width, 0, 0, track.width, track.height);
+        int layer = canvas.saveLayer(null, null);
+        canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
+        canvas.drawBitmap(trackMask, trackMatrix, trackCutPaint);
+        canvas.restoreToCount(layer);
+        if (s.subjectRim > 0f) {
+            track.fill(SubjectTrack.RIM, at, trackPixels);
+            trackRim.setPixels(trackPixels, 0, track.width, 0, 0, track.width, track.height);
+            int tint = s.subjectRimColor < 0f ? Color.WHITE : colorAt(s, s.subjectRimColor);
+            if (tint != rimTint || rimPaint.getColorFilter() == null) {
+                rimTint = tint;
+                rimPaint.setColorFilter(new android.graphics.PorterDuffColorFilter(tint, PorterDuff.Mode.SRC_IN));
+            }
+            rimPaint.setXfermode(ADD);
+            float flare = Math.max(beatLevel, bass);
+            rimPaint.setAlpha((int) (255 * Math.min(1f, s.subjectRim * (0.35f + 0.9f * flare))));
+            canvas.drawBitmap(trackRim, trackMatrix, rimPaint);
+        }
     }
 
     /** Only still pictures have a subject to lift out; videos and GIFs move on their own. */

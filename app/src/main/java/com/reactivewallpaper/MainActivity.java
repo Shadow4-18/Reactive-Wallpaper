@@ -341,15 +341,22 @@ public class MainActivity extends Activity {
         LinearLayout subject = ui.section("Subject in front");
         ui.hint(subject, "Mark the picture's subject (a person, a character) and it's drawn in front of the "
                 + "glow, particles and visualizer, with its own depth.");
+        boolean moving = s.mediaType != WallpaperSettings.MEDIA_IMAGE;
+        if (moving) {
+            ui.hint(subject, "In a video or GIF, Resona finds the subject all the way through, so the light "
+                    + "behind it, its outline and drawing it in front follow it as it moves. Finding it takes "
+                    + "a minute or so, once.");
+        }
         Button markSubject = new Button(this);
-        markSubject.setText("Mark the subject");
+        markSubject.setText(moving ? "Track the subject through the "
+                + (s.mediaType == WallpaperSettings.MEDIA_VIDEO ? "video" : "GIF") : "Mark the subject");
         markSubject.setOnClickListener(v -> {
             if (!ImageStore.hasDraftImage(this)) {
                 Toast.makeText(this, "Choose an image first.", Toast.LENGTH_SHORT).show();
                 return;
             }
             if (settings.mediaType != WallpaperSettings.MEDIA_IMAGE) {
-                Toast.makeText(this, "The subject can be marked on still images only.", Toast.LENGTH_LONG).show();
+                trackSubject();
                 return;
             }
             Intent intent = new Intent(this, GlowPaintActivity.class);
@@ -860,6 +867,66 @@ public class MainActivity extends Activity {
                 current, setter);
     }
 
+    /**
+     * Finds the subject all through the video or GIF (see {@link SubjectTrackBuilder}),
+     * with a progress dialog that can be cancelled.
+     */
+    private void trackSubject() {
+        android.widget.ProgressBar bar = new android.widget.ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(100);
+        TextView label = new TextView(this);
+        label.setText("Looking at the first frames…");
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(16), dp(24), 0);
+        box.addView(label);
+        box.addView(bar);
+        SubjectTrackBuilder[] builder = new SubjectTrackBuilder[1];
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Tracking the subject")
+                .setView(box)
+                .setNegativeButton("Cancel", (d, w) -> builder[0].cancel())
+                .setCancelable(false)
+                .show();
+        builder[0] = new SubjectTrackBuilder(this, ImageStore.draft(this).media, settings.mediaType,
+                ImageStore.draftSubjectFile(this), new SubjectTrackBuilder.Listener() {
+                    @Override
+                    public void progress(int done, int total) {
+                        bar.setProgress(100 * done / Math.max(1, total));
+                        label.setText("Finding the subject: " + done + " of " + total);
+                    }
+
+                    @Override
+                    public void done(SubjectTrack track, String error) {
+                        if (isDestroyed()) {
+                            return;
+                        }
+                        if (dialog.isShowing()) {
+                            dialog.dismiss();
+                        }
+                        if (track == null) {
+                            if (error != null) {
+                                Toast.makeText(MainActivity.this, error, Toast.LENGTH_LONG).show();
+                            }
+                            return;
+                        }
+                        settings.subjectFront = true;
+                        if (settings.subjectRim <= 0f && settings.subjectAura <= 0f) {
+                            settings.subjectRim = 0.6f;
+                        }
+                        // Counts as a background change, so the wallpaper reloads it too.
+                        settings.imageVersion = System.currentTimeMillis();
+                        saveDraft();
+                        buildControls();
+                        loadPreviewImage();
+                        Toast.makeText(MainActivity.this, "The subject is tracked. Its light and outline "
+                                + "follow it now.", Toast.LENGTH_LONG).show();
+                    }
+                });
+        builder[0].start();
+    }
+
     /** Gives the preview the weather outside, fetching it if a look wants it and it's old. */
     private void startLiveWeather(boolean rebuild) {
         renderer.setLiveWeather(Weather.current(this));
@@ -1141,6 +1208,8 @@ public class MainActivity extends Activity {
             Bitmap subjectMask = mediaType == WallpaperSettings.MEDIA_IMAGE
                     ? ImageStore.loadMask(ImageStore.draftSubjectFile(this)) : null;
             SubjectLayer subject = subjectMask != null ? SubjectLayer.build(bitmap, subjectMask) : null;
+            SubjectTrack track = mediaType != WallpaperSettings.MEDIA_IMAGE
+                    ? SubjectTrack.read(ImageStore.draftSubjectFile(this)) : null;
             if (subjectMask != null) {
                 subjectMask.recycle();
             }
@@ -1156,6 +1225,7 @@ public class MainActivity extends Activity {
                 }
                 renderer.setImage(bitmap, mask);
                 renderer.setSubject(subject);
+                renderer.setSubjectTrack(track);
                 renderer.setFramed(true);
                 // Videos and GIFs open on the main thread (their players call back here).
                 renderer.setMedia(mediaType != WallpaperSettings.MEDIA_IMAGE

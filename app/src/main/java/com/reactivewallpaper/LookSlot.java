@@ -47,6 +47,7 @@ final class LookSlot {
         next.setSubject(background.subject);
         next.setFramed(background.framed);
         next.setMedia(background.media);
+        next.setSubjectTrack(background.track);
         next.setMediaPlaying(playing);
         next.setTilt(tiltX, tiltY);
         next.setSwipe(swipe, paged);
@@ -186,6 +187,8 @@ final class LookSlot {
         final SubjectLayer subject;
         /** False for backgrounds already shaped for the screen (album art), which skip framing. */
         final boolean framed;
+        /** Where the subject is through a video or GIF, or null. */
+        SubjectTrack track;
 
         Background(android.graphics.Bitmap image, android.graphics.Bitmap mask, MediaBackground media,
                    SubjectLayer subject, boolean framed) {
