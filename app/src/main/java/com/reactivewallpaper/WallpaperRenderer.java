@@ -82,6 +82,16 @@ final class WallpaperRenderer {
     private float smoothTiltX;
     private float smoothTiltY;
     private float smoothSwipe;
+    /**
+     * How the picture moved this frame around the ring's center (shift, zoom,
+     * turn), so a ring visualizer can move exactly with the artwork under it;
+     * {@code ringFollows} is false when there's no picture.
+     */
+    private boolean ringFollows;
+    private float ringShiftX;
+    private float ringShiftY;
+    private float ringZoom = 1f;
+    private float ringAngle;
     private float parallaxX;
     private float parallaxY;
 
@@ -324,7 +334,9 @@ final class WallpaperRenderer {
     private void drawFrame(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s, float dt) {
         time += dt;
         swayPhase += dt * s.swaySpeed;
-        cyclePhase = (cyclePhase + dt * s.colorCycle * 30f) % 360f;
+        // With the color cycle off, colors are exactly as set (the phase another look's
+        // cycle reached must not linger after switching looks).
+        cyclePhase = s.colorCycle > 0f ? (cyclePhase + dt * s.colorCycle * 30f) % 360f : 0f;
         float bass = audio.bass();
         float beat = audio.beat();
         camera.update(dt, beat, s.camPunch, s.camTilt);
@@ -392,8 +404,7 @@ final class WallpaperRenderer {
                 // The ring is lined up with artwork, so it moves with the picture (and is an
                 // oval where the picture is stretched).
                 canvas.save();
-                canvas.translate(parallaxX, parallaxY);
-                canvas.scale(1f, s.circleStretch, w * s.circleX, h * s.circleY);
+                followPicture(canvas, w, h, s);
                 drawCircle(canvas, w, h, audio.bands(), s, bass);
                 canvas.restore();
                 break;
@@ -408,8 +419,7 @@ final class WallpaperRenderer {
                 break;
             case WallpaperSettings.STYLE_ORB:
                 canvas.save();
-                canvas.translate(parallaxX, parallaxY);
-                canvas.scale(1f, s.circleStretch, w * s.circleX, h * s.circleY);
+                followPicture(canvas, w, h, s);
                 styles().drawOrb(canvas, w, h, audio.bands(), s, palette(s), bass, dt);
                 canvas.restore();
                 break;
@@ -419,6 +429,20 @@ final class WallpaperRenderer {
             default:
                 break;
         }
+    }
+
+    /** Moves, zooms and turns a ring visualizer exactly as the picture under it moved. */
+    private void followPicture(Canvas canvas, int w, int h, WallpaperSettings s) {
+        float cx = w * s.circleX;
+        float cy = h * s.circleY;
+        if (ringFollows) {
+            canvas.translate(ringShiftX, ringShiftY);
+            canvas.rotate(ringAngle, cx, cy);
+            canvas.scale(ringZoom, ringZoom, cx, cy);
+        } else {
+            canvas.translate(parallaxX, parallaxY);
+        }
+        canvas.scale(1f, s.circleStretch, cx, cy);
     }
 
     private VisualizerStyles styles() {
@@ -517,6 +541,7 @@ final class WallpaperRenderer {
             reach += 9f * density * s.shake / side;
         }
 
+        ringFollows = false;
         if (image == null) {
             if (gradientHeight != h) {
                 backgroundPaint.setShader(new LinearGradient(0, 0, 0, h,
@@ -558,6 +583,14 @@ final class WallpaperRenderer {
         if (angle != 0f) {
             matrix.postRotate(angle, pivotX, pivotY);
         }
+        // Where the picture point that sits under the ring before any motion ended up.
+        float[] point = {(pivotX - (w - bw * sx) / 2f - panX) / sx, (pivotY - (h - bh * sy) / 2f - panY) / sy};
+        matrix.mapPoints(point);
+        ringFollows = true;
+        ringShiftX = point[0] - pivotX;
+        ringShiftY = point[1] - pivotY;
+        ringZoom = zoom;
+        ringAngle = angle;
         if (mediaFrame != null) {
             updateMediaMatrix();
             canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
@@ -737,7 +770,10 @@ final class WallpaperRenderer {
         }
         float cx = w * s.circleX;
         float cy = h * s.circleY;
-        float radius = Math.min(w, h) * s.circleSize * (1f + 0.1f * bass * s.vizHeight);
+        // Over a picture the ring keeps to the artwork (it already grows with the picture's
+        // pulse); with no picture it swells with the bass on its own.
+        float swell = ringFollows ? 0f : 0.1f * bass * s.vizHeight;
+        float radius = Math.min(w, h) * s.circleSize * (1f + swell);
         int spokes = n * 2;
         double step = 2 * Math.PI / spokes;
         float spokeWidth = Math.max(2f, (float) (radius * step * 0.55));
