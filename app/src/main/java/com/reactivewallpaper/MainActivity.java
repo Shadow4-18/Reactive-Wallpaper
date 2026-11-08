@@ -484,14 +484,19 @@ public class MainActivity extends Activity {
 
         LinearLayout effects = ui.section("Shader effects", true);
         if (android.os.Build.VERSION.SDK_INT >= 33) {
-            ui.slider(effects, "Bass ripples", 0f, 2f, () -> s.fxRipple, v -> s.fxRipple = v, Controls::percent);
-            ui.slider(effects, "Color split on beats", 0f, 2f, () -> s.fxSplit, v -> s.fxSplit = v, Controls::percent);
-            ui.slider(effects, "Glitch on beats", 0f, 2f, () -> s.fxGlitch, v -> s.fxGlitch = v, Controls::percent);
+            ui.slider(effects, "Ripples", 0f, 2f, () -> s.fxRipple, v -> s.fxRipple = v, Controls::percent);
+            driveChoice(effects, s.fxRippleDrive, v -> s.fxRippleDrive = v);
+            ui.slider(effects, "Color split", 0f, 2f, () -> s.fxSplit, v -> s.fxSplit = v, Controls::percent);
+            driveChoice(effects, s.fxSplitDrive, v -> s.fxSplitDrive = v);
+            ui.slider(effects, "Glitch", 0f, 2f, () -> s.fxGlitch, v -> s.fxGlitch = v, Controls::percent);
+            driveChoice(effects, s.fxGlitchDrive, v -> s.fxGlitchDrive = v);
             ui.slider(effects, "Heat haze", 0f, 2f, () -> s.fxHaze, v -> s.fxHaze = v, Controls::percent);
+            driveChoice(effects, s.fxHazeDrive, v -> s.fxHazeDrive = v);
             ui.slider(effects, "Film grain", 0f, 1f, () -> s.fxGrain, v -> s.fxGrain = v, Controls::percent);
             ui.slider(effects, "Vignette", 0f, 1f, () -> s.fxVignette, v -> s.fxVignette = v, Controls::percent);
-            ui.hint(effects, "These bend and color the whole picture on the GPU. With the Ripple tap effect, "
-                    + "taps make the picture ripple like water too.");
+            ui.hint(effects, "These bend and color the whole picture on the GPU, and they stack. Give each its "
+                    + "own part of the sound to mix them: say, glitch on the beats and color split on the "
+                    + "highs. With the Ripple tap effect, taps make the picture ripple like water too.");
         } else {
             ui.hint(effects, "Shader effects need Android 13 or newer.");
         }
@@ -839,6 +844,14 @@ public class MainActivity extends Activity {
         } else {
             artSource.stop();
         }
+    }
+
+    /** "Reacts to": which part of the sound drives an effect. */
+    private void driveChoice(LinearLayout parent, int current, Controls.IntSetter setter) {
+        ui.choice(parent, new String[] {"Beats", "Bass", "Highs", "Mix"},
+                new int[] {WallpaperSettings.DRIVE_BEATS, WallpaperSettings.DRIVE_BASS, WallpaperSettings.DRIVE_HIGHS,
+                        WallpaperSettings.DRIVE_MIX},
+                current, setter);
     }
 
     /** Gives the preview the weather outside, fetching it if a look wants it and it's old. */

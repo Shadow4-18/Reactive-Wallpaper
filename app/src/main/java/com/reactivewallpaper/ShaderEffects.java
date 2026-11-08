@@ -185,8 +185,10 @@ final class ShaderEffects {
         node.endRecording();
         time += dt;
         float beat = audio.beat();
-        boolean hit = beat > 0.7f && lastBeat <= 0.7f;
-        lastBeat = beat;
+        // Each effect follows its own part of the sound.
+        float rippleDrive = drive(s.fxRippleDrive, audio);
+        boolean hit = rippleDrive > 0.7f && lastBeat <= 0.7f;
+        lastBeat = rippleDrive;
         // Strong beats send a ripple from the middle of the scene, unless a tap ripple is still running.
         if (hit && s.fxRipple > 0f && (rippleAge > 0.6f || rippleStrength < 1f)) {
             rippleX = w / 2f;
@@ -195,7 +197,7 @@ final class ShaderEffects {
             rippleStrength = s.fxRipple * (0.5f + 0.5f * audio.bass());
         }
         rippleAge += dt;
-        glitches.update(dt, beat, s.fxGlitch);
+        glitches.update(dt, drive(s.fxGlitchDrive, audio), s.fxGlitch);
         float level = audio.level();
         if (!failed && shader == null) {
             try {
@@ -215,14 +217,29 @@ final class ShaderEffects {
         shader.setFloatUniform("rippleCenter", rippleX, rippleY);
         shader.setFloatUniform("rippleAge", rippleAge);
         shader.setFloatUniform("rippleAmp", rippleAge < RIPPLE_SECONDS ? rippleStrength : 0f);
-        shader.setFloatUniform("split", s.fxSplit * density * (6f * beat + 1.5f * level));
+        shader.setFloatUniform("split", s.fxSplit * density * (6f * drive(s.fxSplitDrive, audio) + 1.5f * level));
         shader.setFloatUniform("glitch", glitches.strength());
         shader.setFloatUniform("glitchSeed", glitches.seed());
-        shader.setFloatUniform("haze", s.fxHaze * (0.4f + 0.6f * level));
+        shader.setFloatUniform("haze", s.fxHaze * (0.4f + 0.6f * drive(s.fxHazeDrive, audio)));
         shader.setFloatUniform("grain", s.fxGrain);
         shader.setFloatUniform("vignette", s.fxVignette * (0.7f + 0.3f * audio.bass()));
         node.setRenderEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"));
         target.drawRenderNode(node);
+    }
+
+    /** 0..1: the part of the sound an effect follows (see WallpaperSettings.DRIVE_*). */
+    static float drive(int which, AudioAnalyzer audio) {
+        switch (which) {
+            case WallpaperSettings.DRIVE_BASS:
+                return audio.bass();
+            case WallpaperSettings.DRIVE_HIGHS:
+                // Hi-hats, cymbals and vocals sit lower than the bass does; lift them to match.
+                return Math.min(1f, audio.high() * 1.8f);
+            case WallpaperSettings.DRIVE_MIX:
+                return audio.level();
+            default:
+                return audio.beat();
+        }
     }
 
     /** True while a ripple is still spreading (so frames keep coming). */

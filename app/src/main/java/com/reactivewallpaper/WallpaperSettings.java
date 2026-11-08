@@ -149,6 +149,15 @@ final class WallpaperSettings {
     float fxSplit = 0f;
     float fxGlitch = 0f;
     float fxHaze = 0f;
+    // What part of the sound drives each effect (DRIVE_*), so effects can be mixed.
+    static final int DRIVE_BEATS = 0;
+    static final int DRIVE_BASS = 1;
+    static final int DRIVE_HIGHS = 2;
+    static final int DRIVE_MIX = 3;
+    int fxRippleDrive = DRIVE_BEATS;
+    int fxSplitDrive = DRIVE_BEATS;
+    int fxGlitchDrive = DRIVE_BEATS;
+    int fxHazeDrive = DRIVE_MIX;
     float fxGrain = 0f;
     float fxVignette = 0f;
 
@@ -555,6 +564,10 @@ final class WallpaperSettings {
         s.fxSplit = p.getFloat("fxSplit", s.fxSplit);
         s.fxGlitch = p.getFloat("fxGlitch", s.fxGlitch);
         s.fxHaze = p.getFloat("fxHaze", s.fxHaze);
+        s.fxRippleDrive = p.getInt("fxRippleDrive", s.fxRippleDrive);
+        s.fxSplitDrive = p.getInt("fxSplitDrive", s.fxSplitDrive);
+        s.fxGlitchDrive = p.getInt("fxGlitchDrive", s.fxGlitchDrive);
+        s.fxHazeDrive = p.getInt("fxHazeDrive", s.fxHazeDrive);
         s.fxGrain = p.getFloat("fxGrain", s.fxGrain);
         s.fxVignette = p.getFloat("fxVignette", s.fxVignette);
         s.subjectFront = p.getBoolean("subjectFront", s.subjectFront);
@@ -674,6 +687,10 @@ final class WallpaperSettings {
         w.putFloat("fxSplit", fxSplit);
         w.putFloat("fxGlitch", fxGlitch);
         w.putFloat("fxHaze", fxHaze);
+        w.putInt("fxRippleDrive", fxRippleDrive);
+        w.putInt("fxSplitDrive", fxSplitDrive);
+        w.putInt("fxGlitchDrive", fxGlitchDrive);
+        w.putInt("fxHazeDrive", fxHazeDrive);
         w.putFloat("fxGrain", fxGrain);
         w.putFloat("fxVignette", fxVignette);
         w.putBoolean("subjectFront", subjectFront);
