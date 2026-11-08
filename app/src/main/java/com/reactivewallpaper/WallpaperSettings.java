@@ -172,6 +172,8 @@ final class WallpaperSettings {
     float circleX = 0.5f;
     /** Ring radius as a fraction of screen width, 0.15 .. 0.45 */
     float circleSize = 0.27f;
+    /** Ring height over width: 1 is round; a stretched picture's ring is an oval. */
+    float circleStretch = 1f;
     int colorMode = COLOR_AUTO;
     /** 0 .. 360 */
     float hue = 190f;
@@ -504,6 +506,7 @@ final class WallpaperSettings {
         s.circleY = p.getFloat("circleY", s.circleY);
         s.circleX = p.getFloat("circleX", s.circleX);
         s.circleSize = p.getFloat("circleSize", s.circleSize);
+        s.circleStretch = Math.max(0.4f, Math.min(2.5f, p.getFloat("circleStretch", s.circleStretch)));
         s.colorMode = p.getInt("colorMode", s.colorMode);
         s.hue = p.getFloat("hue", s.hue);
 
@@ -614,6 +617,7 @@ final class WallpaperSettings {
         w.putFloat("circleY", circleY);
         w.putFloat("circleX", circleX);
         w.putFloat("circleSize", circleSize);
+        w.putFloat("circleStretch", circleStretch);
         w.putInt("colorMode", colorMode);
         w.putFloat("hue", hue);
         w.putFloat("sensitivity", sensitivity);

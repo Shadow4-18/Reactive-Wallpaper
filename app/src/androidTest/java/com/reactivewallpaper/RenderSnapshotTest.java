@@ -264,16 +264,34 @@ public class RenderSnapshotTest {
         org.junit.Assert.assertEquals(54f, ring.x, 4f);
         org.junit.Assert.assertEquals(0.58f * 240, ring.y, 4f);
         org.junit.Assert.assertEquals(0.36f * 108, ring.radius, 4f);
-        WallpaperSettings base = new WallpaperSettings();
-        float[] fit = WallpaperRenderer.fit(108, 240, W, H, base, true);
-        float x = (W - 108 * fit[0]) / 2f + fit[2] + ring.x * fit[0];
-        float y = (H - 240 * fit[1]) / 2f + fit[3] + ring.y * fit[1];
-        float size = ring.radius * fit[0] / Math.min(W, H);
+        WallpaperSettings placed = new WallpaperSettings();
+        RingFinder.place(ring, 108, 240, W, H, placed);
         snap("10_ring_auto_aligned", image, true, s -> {
             s.style = WallpaperSettings.STYLE_CIRCLE;
-            s.circleX = x / W;
-            s.circleY = y / H;
-            s.circleSize = size;
+            s.circleX = placed.circleX;
+            s.circleY = placed.circleY;
+            s.circleSize = placed.circleSize;
+            s.circleStretch = placed.circleStretch;
+        });
+
+        // A wider picture stretched to the screen: its ring becomes an oval, and so does the visualizer.
+        Bitmap wide = TestScenes.neon(1200, 2000);
+        Bitmap wideSmall = Bitmap.createScaledBitmap(wide, 240, 400, true);
+        int[] wpx = new int[240 * 400];
+        wideSmall.getPixels(wpx, 0, 240, 0, 0, 240, 400);
+        RingFinder.Ring wideRing = RingFinder.find(wpx, 240, 400);
+        org.junit.Assert.assertNotNull("no ring in the wide picture", wideRing);
+        WallpaperSettings stretched = new WallpaperSettings();
+        stretched.fitMode = WallpaperSettings.FIT_STRETCH;
+        RingFinder.place(wideRing, 240, 400, W, H, stretched);
+        org.junit.Assert.assertTrue("oval: " + stretched.circleStretch, stretched.circleStretch > 1.2f);
+        snap("11_ring_auto_aligned_stretched", wide, true, s -> {
+            s.fitMode = WallpaperSettings.FIT_STRETCH;
+            s.style = WallpaperSettings.STYLE_CIRCLE;
+            s.circleX = stretched.circleX;
+            s.circleY = stretched.circleY;
+            s.circleSize = stretched.circleSize;
+            s.circleStretch = stretched.circleStretch;
         });
     }
 

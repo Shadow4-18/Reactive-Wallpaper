@@ -101,4 +101,24 @@ public class RingFinderTest {
         rect(px, w, 40, 200, 70, 280, 0xFFFFFFFF);
         assertNull(RingFinder.find(px, w, h));
     }
+
+    /** A neon ring as drawn in art: a thin bright line inside a wide soft glow. */
+    private static void glowingRing(int[] px, int w, int h, float cx, float cy, float radius) {
+        ring(px, w, h, cx, cy, radius, 9f, 0x5A1E50);
+        ring(px, w, h, cx, cy, radius, 2.2f, 0xFF6EE6);
+    }
+
+    @Test
+    public void landsOnTheLineToAFractionOfAPixel() {
+        int w = 360;
+        int h = 640;
+        int[] px = sky(w, h, 7);
+        // Off the pixel grid on purpose, and with a wide glow around the line.
+        glowingRing(px, w, h, 181.4f, 352.7f, 96.3f);
+        RingFinder.Ring r = RingFinder.find(px, w, h);
+        assertNotNull(r);
+        assertEquals(181.4f, r.x, 0.6f);
+        assertEquals(352.7f, r.y, 0.6f);
+        assertEquals("on the line, not the glow's edge", 96.3f, r.radius, 0.8f);
+    }
 }

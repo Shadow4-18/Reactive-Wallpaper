@@ -502,6 +502,8 @@ public class MainActivity extends Activity {
         ui.slider(circle, "Ring position (left / right)", 0.1f, 0.9f, () -> s.circleX, v -> s.circleX = v,
                 Controls::percent);
         ui.slider(circle, "Ring size", 0.08f, 0.5f, () -> s.circleSize, v -> s.circleSize = v, Controls::percent);
+        ui.slider(circle, "Ring shape (wide ↔ tall)", 0.5f, 2f, () -> s.circleStretch, v -> s.circleStretch = v,
+                v -> Math.abs(v - 1f) < 0.02f ? "Round" : Math.round(v * 100) + "% tall");
         circleOptions = circle;
         ui.label(viz, "Color");
         ui.choice(viz, new String[] {"From image", "Rainbow", "Custom"},
@@ -1160,12 +1162,13 @@ public class MainActivity extends Activity {
         int screenH = dm.heightPixels;
         Toast.makeText(this, "Looking for a ring…", Toast.LENGTH_SHORT).show();
         executor.execute(() -> {
-            Bitmap image = ImageStore.load(ImageStore.draftFile(this), 480, 480);
+            Bitmap image = ImageStore.load(ImageStore.draftFile(this), 400, 400);
             RingFinder.Ring found = null;
             int bw = 0;
             int bh = 0;
             if (image != null) {
-                float scale = 240f / Math.max(image.getWidth(), image.getHeight());
+                // Big enough to place the ring to a few screen pixels.
+                float scale = Math.min(1f, 400f / Math.max(image.getWidth(), image.getHeight()));
                 bw = Math.max(1, Math.round(image.getWidth() * scale));
                 bh = Math.max(1, Math.round(image.getHeight() * scale));
                 Bitmap small = Bitmap.createScaledBitmap(image, bw, bh, true);
@@ -1189,13 +1192,7 @@ public class MainActivity extends Activity {
                             + "Use the ring sliders to place it.", Toast.LENGTH_LONG).show();
                     return;
                 }
-                float[] fit = WallpaperRenderer.fit(imageW, imageH, screenW, screenH, settings, true);
-                float x = (screenW - imageW * fit[0]) / 2f + fit[2] + ring.x * fit[0];
-                float y = (screenH - imageH * fit[1]) / 2f + fit[3] + ring.y * fit[1];
-                float radius = ring.radius * (fit[0] + fit[1]) / 2f;
-                settings.circleX = clamp(x / screenW, 0.1f, 0.9f);
-                settings.circleY = clamp(y / screenH, 0.1f, 0.9f);
-                settings.circleSize = clamp(radius / Math.min(screenW, screenH), 0.08f, 0.5f);
+                RingFinder.place(ring, imageW, imageH, screenW, screenH, settings);
                 if (!WallpaperSettings.isRing(settings.style)) {
                     settings.style = WallpaperSettings.STYLE_CIRCLE;
                 }

@@ -389,9 +389,11 @@ final class WallpaperRenderer {
                 drawBars(canvas, w, h, audio.bands(), s);
                 break;
             case WallpaperSettings.STYLE_CIRCLE:
-                // The ring is lined up with artwork, so it moves with the picture.
+                // The ring is lined up with artwork, so it moves with the picture (and is an
+                // oval where the picture is stretched).
                 canvas.save();
                 canvas.translate(parallaxX, parallaxY);
+                canvas.scale(1f, s.circleStretch, w * s.circleX, h * s.circleY);
                 drawCircle(canvas, w, h, audio.bands(), s, bass);
                 canvas.restore();
                 break;
@@ -407,6 +409,7 @@ final class WallpaperRenderer {
             case WallpaperSettings.STYLE_ORB:
                 canvas.save();
                 canvas.translate(parallaxX, parallaxY);
+                canvas.scale(1f, s.circleStretch, w * s.circleX, h * s.circleY);
                 styles().drawOrb(canvas, w, h, audio.bands(), s, palette(s), bass, dt);
                 canvas.restore();
                 break;

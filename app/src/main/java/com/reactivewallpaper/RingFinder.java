@@ -30,6 +30,26 @@ final class RingFinder {
     }
 
     private static final int ANGLE_BINS = 72;
+
+    /**
+     * Puts the ring visualizer on {@code ring} (found in a {@code bw} x {@code bh}
+     * copy of the picture) where it lands on a {@code w} x {@code h} screen with
+     * the look's fit, zoom and position: center, size (from its width on screen)
+     * and shape (an oval where the fit stretches the picture).
+     */
+    static void place(Ring ring, int bw, int bh, int w, int h, WallpaperSettings s) {
+        float[] fit = WallpaperRenderer.fit(bw, bh, w, h, s, true);
+        float x = (w - bw * fit[0]) / 2f + fit[2] + ring.x * fit[0];
+        float y = (h - bh * fit[1]) / 2f + fit[3] + ring.y * fit[1];
+        s.circleX = clamp(x / w, 0.1f, 0.9f);
+        s.circleY = clamp(y / h, 0.1f, 0.9f);
+        s.circleSize = clamp(ring.radius * fit[0] / Math.min(w, h), 0.08f, 0.5f);
+        s.circleStretch = clamp(fit[1] / fit[0], 0.5f, 2f);
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
     private static final float MIN_COVERAGE = 0.55f;
 
     private RingFinder() {}
@@ -150,7 +170,135 @@ final class RingFinder {
                 chosen = r;
             }
         }
-        return chosen;
+        // The edges only give the ring roughly (to a pixel, and a glow's outer edge
+        // can stand in for the line): pin it down on the line itself.
+        return refine(lum, w, h, chosen);
+    }
+
+    /**
+     * Puts the ring exactly on its line: along rays from the center, finds the
+     * brightest point near the ring (to a fraction of a pixel), then fits the
+     * circle through those points; twice, re-centering in between.
+     */
+    static Ring refine(float[] lum, int w, int h, Ring ring) {
+        double cx = ring.x;
+        double cy = ring.y;
+        double r = ring.radius;
+        for (int pass = 0; pass < 3; pass++) {
+            int rays = 120;
+            double[] px = new double[rays];
+            double[] py = new double[rays];
+            int n = 0;
+            for (int k = 0; k < rays; k++) {
+                double a = 2 * Math.PI * k / rays;
+                double cos = Math.cos(a);
+                double sin = Math.sin(a);
+                double from = r * 0.82;
+                double to = r * 1.18;
+                int steps = (int) Math.ceil((to - from) / 0.5);
+                double best = -1;
+                double low = Double.MAX_VALUE;
+                int bestStep = -1;
+                double[] values = new double[steps + 1];
+                boolean inside = true;
+                for (int s = 0; s <= steps; s++) {
+                    double d = from + s * 0.5;
+                    double v = sample(lum, w, h, cx + cos * d, cy + sin * d);
+                    if (Double.isNaN(v)) {
+                        inside = false;
+                        break;
+                    }
+                    values[s] = v;
+                    if (v > best) {
+                        best = v;
+                        bestStep = s;
+                    }
+                    low = Math.min(low, v);
+                }
+                // Skip rays that leave the picture, cross nothing, or peak at the window's edge.
+                if (!inside || best - low < 0.08 || bestStep <= 0 || bestStep >= steps) {
+                    continue;
+                }
+                // The peak between samples, from the parabola through its neighbors.
+                double l = values[bestStep - 1];
+                double m = values[bestStep];
+                double rr = values[bestStep + 1];
+                double denom = l - 2 * m + rr;
+                double shift = denom < 0 ? 0.5 * (l - rr) / denom : 0;
+                double d = from + (bestStep + Math.max(-0.5, Math.min(0.5, shift))) * 0.5;
+                px[n] = cx + cos * d;
+                py[n] = cy + sin * d;
+                n++;
+            }
+            if (n < rays / 4) {
+                break;
+            }
+            double[] fit = fitCircle(px, py, n);
+            if (fit == null || fit[2] <= 0 || Math.hypot(fit[0] - cx, fit[1] - cy) > r * 0.2) {
+                break;
+            }
+            cx = fit[0];
+            cy = fit[1];
+            r = fit[2];
+        }
+        return new Ring((float) cx, (float) cy, (float) r, ring.coverage);
+    }
+
+    /** Least-squares circle through points (Kasa's method): {x, y, radius}, or null. */
+    static double[] fitCircle(double[] x, double[] y, int n) {
+        // Solve x^2 + y^2 + a x + b y + c = 0 for a, b, c.
+        double sxx = 0, sxy = 0, syy = 0, sx = 0, sy = 0, sxz = 0, syz = 0, sz = 0;
+        for (int i = 0; i < n; i++) {
+            double z = x[i] * x[i] + y[i] * y[i];
+            sxx += x[i] * x[i];
+            sxy += x[i] * y[i];
+            syy += y[i] * y[i];
+            sx += x[i];
+            sy += y[i];
+            sxz += x[i] * z;
+            syz += y[i] * z;
+            sz += z;
+        }
+        double[][] m = {{sxx, sxy, sx}, {sxy, syy, sy}, {sx, sy, n}};
+        double[] v = {-sxz, -syz, -sz};
+        double det = det3(m);
+        if (Math.abs(det) < 1e-9) {
+            return null;
+        }
+        double[] abc = new double[3];
+        for (int c = 0; c < 3; c++) {
+            double[][] mc = {m[0].clone(), m[1].clone(), m[2].clone()};
+            for (int row = 0; row < 3; row++) {
+                mc[row][c] = v[row];
+            }
+            abc[c] = det3(mc) / det;
+        }
+        double cx = -abc[0] / 2;
+        double cy = -abc[1] / 2;
+        double r2 = cx * cx + cy * cy - abc[2];
+        return r2 > 0 ? new double[] {cx, cy, Math.sqrt(r2)} : null;
+    }
+
+    private static double det3(double[][] m) {
+        return m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+                - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+                + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    }
+
+    /** Brightness between pixels (bilinear), or NaN outside the picture. */
+    private static double sample(float[] lum, int w, int h, double x, double y) {
+        if (x < 0 || y < 0 || x > w - 1 || y > h - 1) {
+            return Double.NaN;
+        }
+        int x0 = (int) x;
+        int y0 = (int) y;
+        int x1 = Math.min(w - 1, x0 + 1);
+        int y1 = Math.min(h - 1, y0 + 1);
+        double fx = x - x0;
+        double fy = y - y0;
+        double top = lum[y0 * w + x0] * (1 - fx) + lum[y0 * w + x1] * fx;
+        double bottom = lum[y1 * w + x0] * (1 - fx) + lum[y1 * w + x1] * fx;
+        return top * (1 - fy) + bottom * fy;
     }
 
     /** Radii around one center at which aligned edges run most of the way around. */
