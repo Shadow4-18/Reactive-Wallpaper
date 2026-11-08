@@ -80,7 +80,7 @@ final class WeatherLayer {
     }
 
     private void respawn(int i, boolean anywhere) {
-        x[i] = random.nextFloat() * 1.4f - 0.2f;
+        x[i] = random.nextFloat() * 1.2f - 0.1f;
         y[i] = anywhere ? random.nextFloat() : -0.05f - random.nextFloat() * 0.15f;
         speed[i] = 0.85f + random.nextFloat() * 0.3f;
         // Most drops are far away; a few are close.
@@ -153,6 +153,13 @@ final class WeatherLayer {
             float v = speed[i] * (0.55f + 0.9f * d) * fall;
             y[i] += v * dt;
             x[i] += v * lean * dt * h / w;
+            // Drops blown off one side come back in on the other, so the wind never leaves a
+            // corner dry (they'd otherwise all start along the top and drift one way).
+            if (x[i] > 1.1f) {
+                x[i] -= 1.2f;
+            } else if (x[i] < -0.1f) {
+                x[i] += 1.2f;
+            }
             boolean near = d > 0.45f;
             if (y[i] > (near ? land[i] : 1.05f)) {
                 if (near) {
