@@ -194,22 +194,69 @@ final class Updater {
         return out;
     }
 
-    /** Downloads the release's APK into app storage. Call off the main thread. */
+    private static final int DOWNLOAD_TRIES = 4;
+
+    /**
+     * Downloads the release's APK into app storage. Call off the main thread.
+     * A stalled or dropped connection is retried, picking up where it stopped,
+     * so a slow or patchy network still gets there.
+     */
     static File download(Context context, Release release, Progress progress) throws IOException {
         File target = new File(context.getCacheDir(), "update.apk");
-        HttpURLConnection connection = open(release.apkUrl);
-        try {
-            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-                throw new IOException("Download failed (" + connection.getResponseCode() + ")");
+        target.delete();
+        IOException last = null;
+        for (int attempt = 0; attempt < DOWNLOAD_TRIES; attempt++) {
+            if (attempt > 0) {
+                try {
+                    Thread.sleep(1500L * attempt);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
-            long total = connection.getContentLengthLong();
+            try {
+                if (downloadPart(release.apkUrl, target, progress)) {
+                    return target;
+                }
+            } catch (java.net.SocketTimeoutException | java.net.SocketException
+                     | java.net.UnknownHostException | java.io.EOFException e) {
+                // The network stalled or dropped: try again from where it stopped.
+                last = e;
+            } catch (IOException e) {
+                target.delete();
+                throw e;
+            }
+        }
+        target.delete();
+        throw new IOException("the download kept stalling. Check your connection and try again"
+                + (last != null && last.getMessage() != null ? " (" + last.getMessage() + ")" : "") + ".");
+    }
+
+    /** One try: resumes a partial file when the server allows. True when the whole file is in. */
+    private static boolean downloadPart(String url, File target, Progress progress) throws IOException {
+        long have = target.isFile() ? target.length() : 0L;
+        HttpURLConnection connection = open(url);
+        if (have > 0) {
+            connection.setRequestProperty("Range", "bytes=" + have + "-");
+        }
+        try {
+            int code = connection.getResponseCode();
+            boolean resumed = code == HttpURLConnection.HTTP_PARTIAL;
+            if (code != HttpURLConnection.HTTP_OK && !resumed) {
+                throw new IOException("Download failed (" + code + ")");
+            }
+            if (!resumed) {
+                have = 0;
+            }
+            long length = connection.getContentLengthLong();
+            long total = length >= 0 ? have + length : -1;
             if (total > MAX_APK_BYTES) {
                 throw new IOException("Update is unexpectedly large");
             }
             try (InputStream in = connection.getInputStream();
-                 OutputStream out = new FileOutputStream(target)) {
+                 OutputStream out = new FileOutputStream(target, resumed)) {
                 byte[] buffer = new byte[64 * 1024];
-                long done = 0;
+                long done = have;
                 int n;
                 while ((n = in.read(buffer)) > 0) {
                     done += n;
@@ -219,11 +266,11 @@ final class Updater {
                     out.write(buffer, 0, n);
                     progress.onProgress(done, total);
                 }
+                if (total >= 0 && done < total) {
+                    throw new java.io.EOFException("connection closed early");
+                }
             }
-            return target;
-        } catch (IOException e) {
-            target.delete();
-            throw e;
+            return true;
         } finally {
             connection.disconnect();
         }
@@ -308,8 +355,8 @@ final class Updater {
 
     private static HttpURLConnection open(String url) throws IOException {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-        connection.setConnectTimeout(15000);
-        connection.setReadTimeout(30000);
+        connection.setConnectTimeout(20000);
+        connection.setReadTimeout(45000);
         connection.setRequestProperty("User-Agent", "Resona-Android");
         connection.setInstanceFollowRedirects(true);
         return connection;
