@@ -54,7 +54,8 @@ final class WeatherLayer {
     private float gust;
 
     // Lightning.
-    private final Path bolt = new Path();
+    /** The main channel, then thinner forks off it, then their forks. */
+    private final Path[] bolt = {new Path(), new Path(), new Path()};
     private float flash;
     private float boltLife;
     /** How soon a new storm's first strike comes, in seconds (tests time it to a frame). */
@@ -304,16 +305,21 @@ final class WeatherLayer {
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeJoin(Paint.Join.ROUND);
             paint.setStrokeCap(Paint.Cap.ROUND);
-            // A wide soft glow, then the white-hot core.
-            paint.setColor(((int) (70 * a) << 24) | BOLT_GLOW);
-            paint.setStrokeWidth(14f * density);
-            canvas.drawPath(bolt, paint);
-            paint.setColor(((int) (140 * a) << 24) | BOLT_GLOW);
-            paint.setStrokeWidth(5f * density);
-            canvas.drawPath(bolt, paint);
-            paint.setColor(BOLT_CORE & 0x00FFFFFF | ((int) (255 * a) << 24));
-            paint.setStrokeWidth(1.8f * density);
-            canvas.drawPath(bolt, paint);
+            // Per channel: a faint wide glow, a brighter halo, then a thin white-hot core;
+            // forks are thinner and dimmer than the main channel.
+            for (int level = 0; level < bolt.length; level++) {
+                float k = level == 0 ? 1f : level == 1 ? 0.5f : 0.3f;
+                float fade = level == 0 ? 1f : level == 1 ? 0.75f : 0.5f;
+                paint.setColor(((int) (38 * a * fade) << 24) | BOLT_GLOW);
+                paint.setStrokeWidth(10f * k * density);
+                canvas.drawPath(bolt[level], paint);
+                paint.setColor(((int) (110 * a * fade) << 24) | BOLT_GLOW);
+                paint.setStrokeWidth(3.2f * k * density);
+                canvas.drawPath(bolt[level], paint);
+                paint.setColor(BOLT_CORE & 0x00FFFFFF | ((int) (255 * a * fade) << 24));
+                paint.setStrokeWidth(Math.max(0.6f, 1.3f * k) * density);
+                canvas.drawPath(bolt[level], paint);
+            }
             paint.setStyle(Paint.Style.FILL);
         }
         // Lightning flickers: a few quick re-flashes before it's gone.
@@ -330,7 +336,9 @@ final class WeatherLayer {
         flash = 1f;
         boltLife = 0.22f;
         flickers = 1 + random.nextInt(3);
-        bolt.reset();
+        for (Path p : bolt) {
+            p.reset();
+        }
         float x0 = w * (0.12f + 0.76f * random.nextFloat());
         float bottom = h * (0.45f + 0.3f * random.nextFloat());
         branch(x0, -h * 0.02f, x0 + (random.nextFloat() - 0.5f) * w * 0.3f, bottom, 0, h);
@@ -340,22 +348,18 @@ final class WeatherLayer {
     private void branch(float x0, float y0, float x1, float y1, int level, int h) {
         int steps = 14 - level * 4;
         float jag = (level == 0 ? 0.045f : 0.03f) * h;
-        float px = x0;
-        float py = y0;
-        bolt.moveTo(px, py);
+        Path path = bolt[level];
+        path.moveTo(x0, y0);
         for (int i = 1; i <= steps; i++) {
             float t = i / (float) steps;
             float nx = x0 + (x1 - x0) * t + (i < steps ? (random.nextFloat() - 0.5f) * jag : 0f);
             float ny = y0 + (y1 - y0) * t + (random.nextFloat() - 0.5f) * jag * 0.3f;
-            bolt.lineTo(nx, ny);
+            path.lineTo(nx, ny);
             if (level < 2 && i < steps - 2 && random.nextFloat() < (level == 0 ? 0.22f : 0.12f)) {
                 float len = (y1 - y0) * (0.25f + 0.25f * random.nextFloat());
                 float side = (random.nextFloat() < 0.5f ? -1f : 1f) * len * (0.4f + 0.5f * random.nextFloat());
                 branch(nx, ny, nx + side, ny + len, level + 1, h);
-                bolt.moveTo(nx, ny);
             }
-            px = nx;
-            py = ny;
         }
     }
 
