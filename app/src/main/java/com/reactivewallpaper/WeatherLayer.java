@@ -2,6 +2,7 @@ package com.reactivewallpaper;
 
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Shader;
@@ -138,26 +139,30 @@ final class WeatherLayer {
     }
 
     private void drawFog(Canvas canvas, int w, int h, float strength, float bass, float dt) {
+        float amount = Math.min(1f, strength) * (0.8f + 0.35f * bass);
         paint.setStyle(Paint.Style.FILL);
+        // Mist lying low: clear at the top, thickest along the bottom, fading smoothly in between.
+        int base = (int) (110 * amount);
+        paint.setShader(new LinearGradient(0, h * 0.3f, 0, h, new int[] {Color.TRANSPARENT,
+                Color.argb(base / 3, 205, 210, 228), Color.argb(base, 215, 220, 235)}, new float[] {0f, 0.45f, 1f},
+                Shader.TileMode.CLAMP));
+        canvas.drawRect(0, h * 0.3f, w, h, paint);
+        // Soft wisps drifting sideways through it.
         for (int i = 0; i < FOG_BANKS; i++) {
-            fogX[i] += dt * (0.008f + 0.004f * i) * (i % 2 == 0 ? 1 : -1);
-            if (fogX[i] > 1.4f) {
-                fogX[i] = -0.4f;
-            } else if (fogX[i] < -0.4f) {
-                fogX[i] = 1.4f;
+            fogX[i] += dt * (0.01f + 0.005f * i) * (i % 2 == 0 ? 1 : -1);
+            if (fogX[i] > 1.3f) {
+                fogX[i] = -0.3f;
+            } else if (fogX[i] < -0.3f) {
+                fogX[i] = 1.3f;
             }
             float cx = fogX[i] * w;
-            float cy = h * (0.45f + 0.15f * i);
-            float r = Math.max(w, h) * (0.45f + 0.1f * i);
-            int alpha = (int) (Math.min(1f, strength) * (70 + 45 * bass));
-            paint.setShader(new RadialGradient(cx, cy, r, new int[] {Color.argb(alpha, 210, 215, 230),
-                    Color.argb(alpha / 3, 200, 205, 225), Color.TRANSPARENT}, new float[] {0f, 0.5f, 1f},
+            float cy = h * (0.55f + 0.12f * i);
+            float r = Math.min(w, h) * (0.45f + 0.08f * i);
+            int alpha = (int) (55 * amount);
+            paint.setShader(new RadialGradient(cx, cy, r, new int[] {Color.argb(alpha, 220, 224, 238),
+                    Color.argb(alpha / 3, 210, 215, 232), Color.TRANSPARENT}, new float[] {0f, 0.5f, 1f},
                     Shader.TileMode.CLAMP));
-            canvas.save();
-            // Flattened into a low bank of mist.
-            canvas.scale(1f, 0.4f, cx, cy);
-            canvas.drawCircle(cx, cy, r, paint);
-            canvas.restore();
+            canvas.drawRect(cx - r, cy - r, cx + r, cy + r, paint);
         }
         paint.setShader(null);
     }
