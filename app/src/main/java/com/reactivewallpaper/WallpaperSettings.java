@@ -259,6 +259,42 @@ final class WallpaperSettings {
         prefs(context).edit().putString(KEY_LOCK_LOOK, id == null ? "" : id).apply();
     }
 
+    private static final String KEY_FAVORITES = "favoriteLookIds";
+    private static final String KEY_SHOWN_LOOK = "shownLookId";
+
+    /** Starred looks, in the order they were starred (the looks widget shows the first four). */
+    static java.util.List<String> favoriteIds(Context context) {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (String id : prefs(context).getString(KEY_FAVORITES, "").split("\n")) {
+            if (!id.isEmpty()) {
+                ids.add(id);
+            }
+        }
+        return ids;
+    }
+
+    static void setFavorite(Context context, String id, boolean favorite) {
+        java.util.List<String> ids = favoriteIds(context);
+        ids.remove(id);
+        if (favorite) {
+            ids.add(id);
+        }
+        prefs(context).edit().putString(KEY_FAVORITES, String.join("\n", ids)).apply();
+    }
+
+    /**
+     * A saved look picked from the looks widget, shown on the home screen in
+     * place of the applied wallpaper; "" for the applied wallpaper (and its
+     * rotation or time-of-day looks). Applying from the editor clears it.
+     */
+    static String shownLookId(Context context) {
+        return prefs(context).getString(KEY_SHOWN_LOOK, "");
+    }
+
+    static void setShownLookId(Context context, String id) {
+        prefs(context).edit().putString(KEY_SHOWN_LOOK, id == null ? "" : id).apply();
+    }
+
     private static final String KEY_ROTATION_IDS = "rotationIds";
     private static final String KEY_ROTATION_MODE = "rotationMode";
     private static final String KEY_ROTATION_MINUTES = "rotationMinutes";

@@ -19,4 +19,7 @@
     <string name="widget_previous">Previous track</string>
     <string name="widget_play_pause">Play or pause</string>
     <string name="widget_next">Next track</string>
+    <string name="looks_widget_name">Resona favorite looks</string>
+    <string name="looks_widget_description">Switch the wallpaper to a favorite look in one tap.</string>
+    <string name="looks_widget_empty">Star looks in Resona (long-press a look) to put them here.</string>
 </resources>

@@ -266,7 +266,8 @@ public class ReactiveWallpaperService extends WallpaperService {
         public void onSharedPreferenceChanged(SharedPreferences prefs, String key) {
             live = WallpaperSettings.load(context);
             loadRotation();
-            refresh(false);
+            // Switching looks from the widget crossfades, like rotation does.
+            refresh("shownLookId".equals(key));
             if (visible) {
                 audio.start(live.source);
                 updateTilt();
@@ -339,6 +340,11 @@ public class ReactiveWallpaperService extends WallpaperService {
         }
 
         private Look homeLook() {
+            // A look picked from the looks widget wins until the editor applies again.
+            PresetStore.Preset shown = PresetStore.find(context, WallpaperSettings.shownLookId(context));
+            if (shown != null) {
+                return lookFor(shown);
+            }
             if (rotationMode != WallpaperSettings.ROTATE_OFF && !rotationIds.isEmpty()) {
                 int start = rotationIndex;
                 // Skip looks that were deleted since rotation was set up.

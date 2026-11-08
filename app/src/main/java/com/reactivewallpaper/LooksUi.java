@@ -153,6 +153,8 @@ final class LooksUi {
 
     /** Redraws the looks row and the lock screen and rotation buttons. */
     void refresh() {
+        // Renamed, deleted or starred looks show on the looks widget too.
+        LooksWidgetProvider.updateAll(activity);
         looksRow.removeAllViews();
         for (PresetStore.Preset preset : PresetStore.all(activity)) {
             looksRow.addView(lookItem(preset));
@@ -621,7 +623,8 @@ final class LooksUi {
         }
 
         TextView name = new TextView(activity);
-        name.setText(preset.name);
+        boolean favorite = WallpaperSettings.favoriteIds(activity).contains(preset.id);
+        name.setText(favorite ? "★ " + preset.name : preset.name);
         name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         name.setTextColor(activity.getColor(R.color.text_primary));
         name.setSingleLine(true);
@@ -692,15 +695,26 @@ final class LooksUi {
     }
 
     private void lookMenu(PresetStore.Preset preset) {
+        boolean favorite = WallpaperSettings.favoriteIds(activity).contains(preset.id);
+        String star = favorite ? "☆ Remove from favorites" : "★ Add to favorites (looks widget)";
         if (preset.builtIn) {
-            Toast.makeText(activity, "Built-in looks can't be changed. Apply it, adjust, then save your own.",
-                    Toast.LENGTH_LONG).show();
+            new AlertDialog.Builder(activity)
+                    .setTitle(preset.name)
+                    // (A message would hide the list.) Built-ins can be starred, not changed.
+                    .setItems(new String[] {star}, (d, which) -> toggleFavorite(preset, favorite))
+                    .show();
             return;
         }
-        String[] actions = {"Update with current look", "Rename", "Share as QR code or link", "Export file", "Delete"};
+        String[] actions = {star, "Update with current look", "Rename", "Share as QR code or link", "Export file",
+                "Delete"};
         new AlertDialog.Builder(activity)
                 .setTitle(preset.name)
-                .setItems(actions, (d, which) -> {
+                .setItems(actions, (d, chosen) -> {
+                    if (chosen == 0) {
+                        toggleFavorite(preset, favorite);
+                        return;
+                    }
+                    int which = chosen - 1;
                     if (which == 0) {
                         WallpaperSettings current = host.settings();
                         executor.execute(() -> {
@@ -730,6 +744,17 @@ final class LooksUi {
                     }
                 })
                 .show();
+    }
+
+    private void toggleFavorite(PresetStore.Preset preset, boolean favorite) {
+        WallpaperSettings.setFavorite(activity, preset.id, !favorite);
+        refresh();
+        int count = WallpaperSettings.favoriteIds(activity).size();
+        Toast.makeText(activity, favorite ? "Removed from favorites"
+                : count > LooksWidgetProvider.FAVORITE_SLOTS
+                        ? "Added. The looks widget shows your first " + LooksWidgetProvider.FAVORITE_SLOTS + " favorites."
+                        : "Added to favorites. Add the looks widget from Home screen widgets.",
+                Toast.LENGTH_LONG).show();
     }
 
     private void renameLookDialog(PresetStore.Preset preset) {

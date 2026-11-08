@@ -634,7 +634,7 @@ public class MainActivity extends Activity {
             restartAudio();
         });
 
-        LinearLayout widget = ui.section("Home screen media buttons", true);
+        LinearLayout widget = ui.section("Home screen widgets");
         ui.label(widget, "A widget with previous, play/pause and next that can be faint or completely "
                 + "invisible, so your screen shows only the wallpaper.");
         Button addWidget = new Button(this);
@@ -642,6 +642,13 @@ public class MainActivity extends Activity {
         addWidget.setOnClickListener(v -> addMediaWidget());
         widget.addView(addWidget, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        Button addLooksWidget = new Button(this);
+        addLooksWidget.setText("Add favorite looks to home screen");
+        addLooksWidget.setOnClickListener(v -> addWidget(LooksWidgetProvider.class));
+        widget.addView(addLooksWidget, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ui.hint(widget, "Star looks by long-pressing them in Looks; the widget switches the wallpaper to one "
+                + "in a tap. Applying from the editor goes back to your own.");
         ui.toggle(widget, "Show where the buttons are", () -> MediaWidgetProvider.revealing(this),
                 v -> MediaWidgetProvider.setRevealing(this, v));
         ui.hint(widget, "Outlines the buttons on every Resona widget until you turn this off. "
@@ -795,8 +802,12 @@ public class MainActivity extends Activity {
     }
 
     private void addMediaWidget() {
+        addWidget(MediaWidgetProvider.class);
+    }
+
+    private void addWidget(Class<?> widgetClass) {
         android.appwidget.AppWidgetManager manager = android.appwidget.AppWidgetManager.getInstance(this);
-        ComponentName provider = new ComponentName(this, MediaWidgetProvider.class);
+        ComponentName provider = new ComponentName(this, widgetClass);
         if (manager.isRequestPinAppWidgetSupported()) {
             // The launcher asks the user to place it.
             manager.requestPinAppWidget(provider, null, null);
@@ -1294,8 +1305,11 @@ public class MainActivity extends Activity {
             if (draft.imageVersion != live.imageVersion) {
                 ImageStore.copy(ImageStore.draft(this), ImageStore.live(this));
             }
+            // Applying shows what was applied, not a look picked from the widget.
+            WallpaperSettings.setShownLookId(this, "");
             // Saved after the image is in place, since saving is what tells the wallpaper to reload.
             draft.save(this);
+            LooksWidgetProvider.updateAll(this);
             mainHandler.post(() -> {
                 if (!isDestroyed()) {
                     then.run();
