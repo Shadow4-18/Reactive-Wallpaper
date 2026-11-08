@@ -447,7 +447,7 @@ final class LooksUi {
      * The phone's approximate location (city-level is plenty for sunrise), asking
      * for permission first if needed; null if it can't be had.
      */
-    private void locate(java.util.function.Consumer<double[]> then) {
+    void locate(java.util.function.Consumer<double[]> then) {
         if (activity.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             pendingLocation = then;

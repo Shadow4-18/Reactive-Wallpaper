@@ -50,6 +50,7 @@ final class LookSlot {
         next.setMediaPlaying(playing);
         next.setTilt(tiltX, tiltY);
         next.setSwipe(swipe, paged);
+        next.setLiveWeather(weather);
         if (previous != null) {
             previous.release();
             previous = null;
@@ -139,6 +140,15 @@ final class LookSlot {
     /** True while a tap effect or camera move is still playing out. */
     boolean isBusy() {
         return renderer != null && renderer.isBusy();
+    }
+
+    private Weather.State weather;
+
+    void setLiveWeather(Weather.State state) {
+        weather = state;
+        if (renderer != null) {
+            renderer.setLiveWeather(state);
+        }
     }
 
     void setSaving(boolean saving) {

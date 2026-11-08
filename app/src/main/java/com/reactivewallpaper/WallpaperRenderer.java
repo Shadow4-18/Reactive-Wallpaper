@@ -388,6 +388,8 @@ final class WallpaperRenderer {
             }
         }
 
+        drawWeather(canvas, w, h, s, bass, beat, dt);
+
         // The flash lights everything, the subject included.
         if (s.flash > 0f && beat > 0.01f) {
             fillPaint.setShader(null);
@@ -435,6 +437,32 @@ final class WallpaperRenderer {
             default:
                 break;
         }
+    }
+
+    private WeatherLayer weather;
+    private Weather.State liveWeather = new Weather.State(Weather.CLEAR, 0f, 0f);
+
+    /** The weather outside, for looks that follow it. */
+    void setLiveWeather(Weather.State state) {
+        if (state != null) {
+            liveWeather = state;
+        }
+    }
+
+    private void drawWeather(Canvas canvas, int w, int h, WallpaperSettings s, float bass, float beat, float dt) {
+        if (s.weatherMode == WallpaperSettings.WEATHER_OFF || s.weatherAmount <= 0f) {
+            return;
+        }
+        boolean live = s.weatherMode == WallpaperSettings.WEATHER_LIVE;
+        int kind = live ? liveWeather.kind : s.weatherMode;
+        // A chosen kind uses a medium intensity; live weather its own.
+        float intensity = live ? liveWeather.intensity : 0.6f;
+        float wind = live ? liveWeather.wind : 0.15f;
+        if (weather == null) {
+            weather = new WeatherLayer(density);
+        }
+        float strength = intensity * s.weatherAmount * 1.4f * (saving ? 0.5f : 1f);
+        weather.draw(canvas, w, h, kind, Math.min(1f, strength), wind, colorAt(s, 0.5f), bass, beat, dt);
     }
 
     /** Moves, zooms and turns a ring visualizer exactly as the picture under it moved. */

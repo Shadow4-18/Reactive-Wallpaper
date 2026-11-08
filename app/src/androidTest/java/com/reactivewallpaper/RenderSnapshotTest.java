@@ -77,6 +77,27 @@ public class RenderSnapshotTest {
     }
 
     @Test
+    public void weather() throws Exception {
+        Bitmap image = TestScenes.neon(1200, 2660);
+        snap("80_weather_rain", image, true, s -> {
+            s.weatherMode = Weather.RAIN;
+            s.weatherAmount = 0.8f;
+        });
+        snap("81_weather_snow", image, true, s -> {
+            s.weatherMode = Weather.SNOW;
+            s.weatherAmount = 0.8f;
+        });
+        snap("82_weather_fog", image, true, s -> {
+            s.weatherMode = Weather.FOG;
+            s.weatherAmount = 0.8f;
+        });
+        snap("83_weather_storm", image, true, s -> {
+            s.weatherMode = Weather.STORM;
+            s.weatherAmount = 1f;
+        });
+    }
+
+    @Test
     public void visualizers() throws Exception {
         Bitmap image = TestScenes.neon(1200, 2660);
         snap("01_bars", image, true, s -> { });

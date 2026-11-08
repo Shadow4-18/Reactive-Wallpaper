@@ -377,6 +377,45 @@ public class MainActivity extends Activity {
                 rimChoice, v -> s.subjectRimColor = rimColors[v]);
         ui.hint(subject, "The outline's colors come from the visualizer's colors (Visualizer section).");
 
+        LinearLayout weatherSection = ui.section("Weather");
+        ui.choiceColumn(weatherSection, new String[] {"Off", "Live: the weather outside", "Rain", "Snow", "Fog",
+                        "Thunderstorm (lightning on big beats)"},
+                new int[] {WallpaperSettings.WEATHER_OFF, WallpaperSettings.WEATHER_LIVE, Weather.RAIN, Weather.SNOW,
+                        Weather.FOG, Weather.STORM},
+                s.weatherMode, v -> {
+                    s.weatherMode = v;
+                    if (v == WallpaperSettings.WEATHER_LIVE) {
+                        startLiveWeather(true);
+                    }
+                    buildControls();
+                });
+        ui.slider(weatherSection, "Amount", 0f, 1f, () -> s.weatherAmount, v -> s.weatherAmount = v,
+                Controls::percent);
+        if (s.weatherMode == WallpaperSettings.WEATHER_LIVE) {
+            long at = Weather.fetchedAt(this);
+            String status = WallpaperSettings.sunLocation(this) == null
+                    ? "Needs your approximate location (city level)."
+                    : at == 0 ? "Getting the weather..."
+                    : "Now: " + Weather.describe(Weather.current(this)) + " (updated "
+                            + android.text.format.DateUtils.getRelativeTimeSpanString(at) + ")";
+            ui.hint(weatherSection, status + " Rain falls harder and snow glows brighter with the music. "
+                    + "Clear skies show nothing.");
+            Button where = new Button(this);
+            where.setText(WallpaperSettings.sunLocation(this) == null ? "Use my location" : "Update my location");
+            where.setOnClickListener(v -> looksUi.locate(loc -> {
+                if (loc == null) {
+                    Toast.makeText(this, "Couldn't get your location. Is location on?", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                WallpaperSettings.setLocation(this, loc);
+                getSharedPreferences("weather", MODE_PRIVATE).edit().remove("time").remove("tried").apply();
+                startLiveWeather(true);
+                buildControls();
+            }));
+            weatherSection.addView(where, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
         LinearLayout albumArt = ui.section("Album art");
         ui.toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
             s.albumArt = v;
@@ -716,6 +755,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        startLiveWeather(false);
         route.start();
         mainHandler.removeCallbacks(tempoTicker);
         mainHandler.post(tempoTicker);
@@ -799,6 +839,22 @@ public class MainActivity extends Activity {
         } else {
             artSource.stop();
         }
+    }
+
+    /** Gives the preview the weather outside, fetching it if a look wants it and it's old. */
+    private void startLiveWeather(boolean rebuild) {
+        renderer.setLiveWeather(Weather.current(this));
+        if (settings.weatherMode != WallpaperSettings.WEATHER_LIVE) {
+            return;
+        }
+        Weather.refreshIfStale(this, () -> mainHandler.post(() -> {
+            if (!isDestroyed()) {
+                renderer.setLiveWeather(Weather.current(this));
+                if (rebuild) {
+                    buildControls();
+                }
+            }
+        }));
     }
 
     private void addMediaWidget() {

@@ -160,6 +160,14 @@ final class WallpaperSettings {
     float subjectAura = 0.5f;
     /** A neon line along the subject's outline that flares on the beat, 0 .. 1. */
     float subjectRim = 0f;
+
+    // Weather over the wallpaper.
+    static final int WEATHER_OFF = -1;
+    static final int WEATHER_LIVE = -2;
+    /** WEATHER_OFF, WEATHER_LIVE (the weather outside), or a fixed {@link Weather} kind. */
+    int weatherMode = WEATHER_OFF;
+    /** How much of it, 0 .. 1. */
+    float weatherAmount = 0.6f;
     /** Where on the visualizer's colors the rim takes its color, 0 .. 1; -1 = white. */
     float subjectRimColor = 0.15f;
     /** Draw the visualizer in front of the subject instead of behind it. */
@@ -378,6 +386,12 @@ final class WallpaperSettings {
         return new double[] {p.getFloat(KEY_TOD_LAT, 0f), p.getFloat(KEY_TOD_LON, 0f)};
     }
 
+    /** Saves an approximate location (rounded to about a kilometer), for the sun and the weather. */
+    static void setLocation(Context context, double[] location) {
+        prefs(context).edit().putFloat(KEY_TOD_LAT, Math.round(location[0] * 100) / 100f)
+                .putFloat(KEY_TOD_LON, Math.round(location[1] * 100) / 100f).apply();
+    }
+
     static void setTimeOfDayTimes(Context context, int mode, int[] custom, double[] location) {
         SharedPreferences.Editor e = prefs(context).edit()
                 .putInt(KEY_TOD_MODE, mode)
@@ -547,6 +561,8 @@ final class WallpaperSettings {
         s.subjectDepth = p.getFloat("subjectDepth", s.subjectDepth);
         s.subjectAura = p.getFloat("subjectAura", s.subjectAura);
         s.subjectRim = p.getFloat("subjectRim", s.subjectRim);
+        s.weatherMode = p.getInt("weatherMode", s.weatherMode);
+        s.weatherAmount = p.getFloat("weatherAmount", s.weatherAmount);
         s.subjectRimColor = p.getFloat("subjectRimColor", s.subjectRimColor);
         s.vizFront = p.getBoolean("vizFront", s.vizFront);
 
@@ -664,6 +680,8 @@ final class WallpaperSettings {
         w.putFloat("subjectDepth", subjectDepth);
         w.putFloat("subjectAura", subjectAura);
         w.putFloat("subjectRim", subjectRim);
+        w.putInt("weatherMode", weatherMode);
+        w.putFloat("weatherAmount", weatherAmount);
         w.putFloat("subjectRimColor", subjectRimColor);
         w.putBoolean("vizFront", vizFront);
         w.putInt("style", style);

@@ -192,6 +192,21 @@ public class ReactiveWallpaperService extends WallpaperService {
             }
         }
 
+        /** Hands the weather outside to both looks, fetching it when it's old and a look wants it. */
+        private void updateWeather() {
+            boolean wanted = home.settings.weatherMode == WallpaperSettings.WEATHER_LIVE
+                    || (lock != null && lock.settings.weatherMode == WallpaperSettings.WEATHER_LIVE);
+            if (!wanted) {
+                return;
+            }
+            Weather.State state = Weather.current(context);
+            home.setLiveWeather(state);
+            if (lock != null) {
+                lock.setLiveWeather(state);
+            }
+            Weather.refreshIfStale(context, null);
+        }
+
         /** Makes sure frames are coming, so a moment that just started plays out. */
         private void wake() {
             asleep = false;
@@ -566,6 +581,7 @@ public class ReactiveWallpaperService extends WallpaperService {
                     refresh(true);
                 }
                 updateLocked();
+                updateWeather();
             }
             if (rotationMode == WallpaperSettings.ROTATE_MINUTES
                     && now - lastRotation > rotationMinutes * 60_000L) {
