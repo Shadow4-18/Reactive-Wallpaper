@@ -168,6 +168,10 @@ final class WallpaperRenderer {
             fx.release();
             fx = null;
         }
+        if (weather != null) {
+            weather.release();
+            weather = null;
+        }
         if (moments != null) {
             moments.release();
             moments = null;
@@ -462,7 +466,8 @@ final class WallpaperRenderer {
             weather = new WeatherLayer(density);
         }
         float strength = intensity * s.weatherAmount * 1.4f * (saving ? 0.5f : 1f);
-        weather.draw(canvas, w, h, kind, Math.min(1f, strength), wind, colorAt(s, 0.5f), bass, beat, dt);
+        // Natural colors: the look's colors and hue shift never tint the weather.
+        weather.draw(canvas, w, h, kind, Math.min(1f, strength), wind, bass, beat, dt);
     }
 
     /** Moves, zooms and turns a ring visualizer exactly as the picture under it moved. */

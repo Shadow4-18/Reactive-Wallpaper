@@ -91,9 +91,20 @@ public class RenderSnapshotTest {
             s.weatherMode = Weather.FOG;
             s.weatherAmount = 0.8f;
         });
-        snap("83_weather_storm", image, true, s -> {
-            s.weatherMode = Weather.STORM;
+        // Times the first strike to land just before the shot.
+        WeatherLayer.firstStrikeSeconds = 0.033f * 88;
+        try {
+            snap("83_weather_storm", image, true, s -> {
+                s.weatherMode = Weather.STORM;
+                s.weatherAmount = 1f;
+            });
+        } finally {
+            WeatherLayer.firstStrikeSeconds = 2f;
+        }
+        snap("84_weather_rain_hue_shifted", image, true, s -> {
+            s.weatherMode = Weather.RAIN;
             s.weatherAmount = 1f;
+            s.hueShift = 180f;
         });
     }
 
