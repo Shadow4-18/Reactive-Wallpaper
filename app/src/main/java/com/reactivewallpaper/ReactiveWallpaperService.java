@@ -567,7 +567,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             }
             LookSlot slot = currentSlot();
             WallpaperSettings s = slot.settings;
-            boolean saving = power.shouldSave(s.batterySaver);
+            boolean saving = power.shouldSave(s.batterySaver, s.saverPercent, s.saverWhenHot);
             slot.setSaving(saving);
 
             if (asleep) {

@@ -202,7 +202,16 @@ public class MainActivity extends Activity {
                 updateApplyState();
             }
         });
+        // Back where you left off: the same sections open, scrolled to the same place.
+        for (String title : editorPrefs().getString(KEY_OPEN_SECTIONS, "").split("\n")) {
+            if (!title.isEmpty()) {
+                expandedSections.put(title, true);
+            }
+        }
         buildControls();
+        int scrollY = editorPrefs().getInt(KEY_SCROLL, 0);
+        View scroller = (View) controls.getParent();
+        scroller.post(() -> scroller.scrollTo(0, scrollY));
 
         handleLookLink(getIntent());
 
@@ -216,6 +225,20 @@ public class MainActivity extends Activity {
 
     private static final String KEY_SIMPLE = "simpleEditor";
     private static final String KEY_TOUR = "tourShown";
+    private static final String KEY_OPEN_SECTIONS = "openSections";
+    private static final String KEY_SCROLL = "scrollY";
+
+    /** Remembers which sections are open and how far down the editor is scrolled. */
+    private void saveEditorPlace() {
+        StringBuilder open = new StringBuilder();
+        for (Map.Entry<String, Boolean> e : expandedSections.entrySet()) {
+            if (Boolean.TRUE.equals(e.getValue())) {
+                open.append(e.getKey()).append('\n');
+            }
+        }
+        editorPrefs().edit().putString(KEY_OPEN_SECTIONS, open.toString())
+                .putInt(KEY_SCROLL, ((View) controls.getParent()).getScrollY()).apply();
+    }
 
     /** The editor's own preferences (kept apart from the wallpaper's, which it watches). */
     private android.content.SharedPreferences editorPrefs() {
@@ -340,6 +363,19 @@ public class MainActivity extends Activity {
                 () -> s.subjectDepth, v -> s.subjectDepth = v, Controls::percent);
         ui.slider(subject, "Light behind the subject", 0f, 1f,
                 () -> s.subjectAura, v -> s.subjectAura = v, Controls::percent);
+        ui.slider(subject, "Neon outline (flares on the beat)", 0f, 1f,
+                () -> s.subjectRim, v -> s.subjectRim = v, Controls::percent);
+        ui.label(subject, "Outline color");
+        float[] rimColors = {-1f, 0.15f, 0.5f, 0.85f};
+        int rimChoice = 1;
+        for (int i = 0; i < rimColors.length; i++) {
+            if (Math.abs(rimColors[i] - s.subjectRimColor) < 0.01f) {
+                rimChoice = i;
+            }
+        }
+        ui.choice(subject, new String[] {"White", "Color 1", "Color 2", "Color 3"}, new int[] {0, 1, 2, 3},
+                rimChoice, v -> s.subjectRimColor = rimColors[v]);
+        ui.hint(subject, "The outline's colors come from the visualizer's colors (Visualizer section).");
 
         LinearLayout albumArt = ui.section("Album art");
         ui.toggle(albumArt, "Show the playing song's cover instead of the image", () -> s.albumArt, v -> {
@@ -616,7 +652,13 @@ public class MainActivity extends Activity {
         ui.choice(battery, new String[] {"Off", "Auto", "Always"},
                 new int[] {WallpaperSettings.SAVER_OFF, WallpaperSettings.SAVER_AUTO, WallpaperSettings.SAVER_ALWAYS},
                 s.batterySaver, v -> s.batterySaver = v);
-        ui.hint(battery, "Auto: when the phone is in battery saver or below 20% and not charging.");
+        ui.slider(battery, "Auto: start at battery level", 5f, 50f, () -> s.saverPercent,
+                v -> s.saverPercent = Math.round(v / 5f) * 5, v -> Math.round(v / 5f) * 5 + "%");
+        ui.toggle(battery, "Auto: also when the phone runs hot", () -> s.saverWhenHot, v -> s.saverWhenHot = v);
+        ui.toggle(battery, "Pause screen effects while saving (glitch, ripples, haze...)",
+                () -> s.saverPausesEffects, v -> s.saverPausesEffects = v);
+        ui.hint(battery, "Auto saves whenever the phone is in battery saver, or at the level above and not "
+                + "charging. Screen effects are the heaviest part of a look.");
         ui.label(battery, "Frame rate");
         ui.choice(battery, new String[] {"30", "60", "Screen's max"}, new int[] {30, 60, 0}, s.maxFps,
                 v -> s.maxFps = v);
@@ -690,6 +732,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        saveEditorPlace();
         mainHandler.removeCallbacks(tempoTicker);
         if (clip != null) {
             // Leaving the editor ends the clip early; what was recorded is kept.
@@ -1397,6 +1440,7 @@ public class MainActivity extends Activity {
     /** Undo, redo and hold-to-compare, in a slim row under the preview. */
     @android.annotation.SuppressLint("ClickableViewAccessibility")
     private void addHistoryRow() {
+        compareBefore = editorPrefs().getBoolean(KEY_COMPARE_BEFORE, true);
         ViewGroup parent = (ViewGroup) previewFrame.getParent();
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER);
@@ -1404,19 +1448,29 @@ public class MainActivity extends Activity {
         undoButton.setOnClickListener(v -> stepHistory(true));
         redoButton = rowButton("Redo \u21B7");
         redoButton.setOnClickListener(v -> stepHistory(false));
-        TextView compare = rowButton("Hold to compare");
+        TextView compare = rowButton(compareLabel());
+        long[] downAt = {0};
         compare.setOnTouchListener((v, e) -> {
             int action = e.getActionMasked();
             if (action == android.view.MotionEvent.ACTION_DOWN) {
-                // What's on the wallpaper now, drawn over the editor's picture.
-                preview.setSettings(WallpaperSettings.load(this));
-                compare.setText("Showing applied");
+                downAt[0] = e.getEventTime();
+                WallpaperSettings other = compareTarget();
+                preview.setSettings(other);
+                compare.setText(compareBefore ? "Before your last change" : "Showing applied");
                 v.setPressed(true);
             } else if (action == android.view.MotionEvent.ACTION_UP
                     || action == android.view.MotionEvent.ACTION_CANCEL) {
                 preview.setSettings(settings);
-                compare.setText("Hold to compare");
                 v.setPressed(false);
+                if (action == android.view.MotionEvent.ACTION_UP && e.getEventTime() - downAt[0] < 250) {
+                    // A quick tap switches what holding compares with.
+                    compareBefore = !compareBefore;
+                    editorPrefs().edit().putBoolean(KEY_COMPARE_BEFORE, compareBefore).apply();
+                    Toast.makeText(this, compareBefore
+                            ? "Hold to see the look before your last change"
+                            : "Hold to see what's on your wallpaper now", Toast.LENGTH_SHORT).show();
+                }
+                compare.setText(compareLabel());
             }
             return true;
         });
@@ -1426,6 +1480,28 @@ public class MainActivity extends Activity {
         parent.addView(row, parent.indexOfChild(previewFrame) + 1, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         updateHistoryButtons();
+    }
+
+    private static final String KEY_COMPARE_BEFORE = "compareBefore";
+    private boolean compareBefore;
+
+    private String compareLabel() {
+        return compareBefore ? "Hold: before" : "Hold: applied";
+    }
+
+    /** What holding compare shows: the look before the last change, or the applied wallpaper. */
+    private WallpaperSettings compareTarget() {
+        if (compareBefore && !undoStack.isEmpty()) {
+            try {
+                WallpaperSettings before = PresetStore.fromJson(new org.json.JSONObject(undoStack.peekLast()));
+                before.imageVersion = settings.imageVersion;
+                before.mediaType = settings.mediaType;
+                return before;
+            } catch (org.json.JSONException ignored) {
+                // Fall through to the applied wallpaper.
+            }
+        }
+        return WallpaperSettings.load(this);
     }
 
     private TextView rowButton(String text) {
@@ -1454,7 +1530,7 @@ public class MainActivity extends Activity {
                         + "Here's the quick tour."},
                 {"1. Pick a picture", "Tap Choose image. Photos, art, GIFs and videos all work."},
                 {"2. Make it yours", "Open the sections below the preview. Simple shows the main settings; "
-                        + "Everything shows all of them. Undo, redo and hold-to-compare sit under the preview."},
+                        + "Everything shows all of them. Undo, redo and hold-to-compare sit under the preview (tap compare to switch between before your last change and the applied wallpaper)."},
                 {"3. See it big", "Tap the corner button on the preview to see it full screen, and tap the "
                         + "preview to try touch effects."},
                 {"4. Set it", "Tap Set wallpaper, then choose the home screen, lock screen or both. Save "

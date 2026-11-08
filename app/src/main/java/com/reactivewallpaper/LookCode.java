@@ -34,7 +34,7 @@ final class LookCode {
     private static final String[] LEFT_OUT = {
             "imageVersion", "mediaType", "fitMode", "imageZoom", "imagePanX", "imagePanY", "edgeStyle",
             "hideEdges", "source", "syncSpeakerMs", "syncBluetoothMs", "batterySaver", "sleepMinutes",
-            "maxFps", "notifyPulse", "notifyUseAppColor"};
+            "maxFps", "notifyPulse", "notifyUseAppColor", "saverPercent", "saverWhenHot", "saverPausesEffects"};
 
     /** A decoded look. */
     static final class Look {

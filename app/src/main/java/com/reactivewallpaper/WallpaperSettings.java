@@ -158,6 +158,10 @@ final class WallpaperSettings {
     float subjectDepth = 0.4f;
     /** A light glowing behind the subject with the bass, 0 .. 1. */
     float subjectAura = 0.5f;
+    /** A neon line along the subject's outline that flares on the beat, 0 .. 1. */
+    float subjectRim = 0f;
+    /** Where on the visualizer's colors the rim takes its color, 0 .. 1; -1 = white. */
+    float subjectRimColor = 0.15f;
     /** Draw the visualizer in front of the subject instead of behind it. */
     boolean vizFront = false;
 
@@ -194,6 +198,12 @@ final class WallpaperSettings {
 
     // Battery (a property of the phone, like sync).
     int batterySaver = SAVER_AUTO;
+    /** Auto saving starts at or below this battery level, in percent. */
+    int saverPercent = 20;
+    /** Auto saving also starts when the phone runs hot. */
+    boolean saverWhenHot = true;
+    /** While saving, screen effects (glitch, ripples, haze...) pause too. */
+    boolean saverPausesEffects = true;
     /** Stop animating after this many minutes without sound; 0 = never. */
     int sleepMinutes = 0;
 
@@ -488,6 +498,9 @@ final class WallpaperSettings {
         s.notifyPulse = p.getBoolean("notifyPulse", s.notifyPulse);
         s.notifyUseAppColor = p.getBoolean("notifyUseAppColor", s.notifyUseAppColor);
         s.maxFps = p.getInt("maxFps", s.maxFps);
+        s.saverPercent = Math.max(5, Math.min(50, p.getInt("saverPercent", s.saverPercent)));
+        s.saverWhenHot = p.getBoolean("saverWhenHot", s.saverWhenHot);
+        s.saverPausesEffects = p.getBoolean("saverPausesEffects", s.saverPausesEffects);
         s.fxRipple = p.getFloat("fxRipple", s.fxRipple);
         s.fxSplit = p.getFloat("fxSplit", s.fxSplit);
         s.fxGlitch = p.getFloat("fxGlitch", s.fxGlitch);
@@ -497,6 +510,8 @@ final class WallpaperSettings {
         s.subjectFront = p.getBoolean("subjectFront", s.subjectFront);
         s.subjectDepth = p.getFloat("subjectDepth", s.subjectDepth);
         s.subjectAura = p.getFloat("subjectAura", s.subjectAura);
+        s.subjectRim = p.getFloat("subjectRim", s.subjectRim);
+        s.subjectRimColor = p.getFloat("subjectRimColor", s.subjectRimColor);
         s.vizFront = p.getBoolean("vizFront", s.vizFront);
 
         s.style = p.getInt("style", s.style);
@@ -600,6 +615,9 @@ final class WallpaperSettings {
         w.putBoolean("notifyPulse", notifyPulse);
         w.putBoolean("notifyUseAppColor", notifyUseAppColor);
         w.putInt("maxFps", maxFps);
+        w.putInt("saverPercent", saverPercent);
+        w.putBoolean("saverWhenHot", saverWhenHot);
+        w.putBoolean("saverPausesEffects", saverPausesEffects);
         w.putFloat("fxRipple", fxRipple);
         w.putFloat("fxSplit", fxSplit);
         w.putFloat("fxGlitch", fxGlitch);
@@ -609,6 +627,8 @@ final class WallpaperSettings {
         w.putBoolean("subjectFront", subjectFront);
         w.putFloat("subjectDepth", subjectDepth);
         w.putFloat("subjectAura", subjectAura);
+        w.putFloat("subjectRim", subjectRim);
+        w.putFloat("subjectRimColor", subjectRimColor);
         w.putBoolean("vizFront", vizFront);
         w.putInt("style", style);
         w.putFloat("vizHeight", vizHeight);
@@ -681,7 +701,12 @@ final class WallpaperSettings {
         boolean changed = source != other.source || syncSpeakerMs != other.syncSpeakerMs
                 || syncBluetoothMs != other.syncBluetoothMs || batterySaver != other.batterySaver
                 || sleepMinutes != other.sleepMinutes || maxFps != other.maxFps
-                || notifyPulse != other.notifyPulse || notifyUseAppColor != other.notifyUseAppColor;
+                || notifyPulse != other.notifyPulse || notifyUseAppColor != other.notifyUseAppColor
+                || saverPercent != other.saverPercent || saverWhenHot != other.saverWhenHot
+                || saverPausesEffects != other.saverPausesEffects;
+        saverPercent = other.saverPercent;
+        saverWhenHot = other.saverWhenHot;
+        saverPausesEffects = other.saverPausesEffects;
         source = other.source;
         maxFps = other.maxFps;
         notifyPulse = other.notifyPulse;

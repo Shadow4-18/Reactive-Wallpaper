@@ -234,6 +234,15 @@ public class RenderSnapshotTest {
             });
             tiltX = 0f;
             snap("62_subject_off", image, true, s -> s.subjectFront = false);
+            snap("6A_subject_neon_outline", image, true, s -> {
+                s.subjectRim = 1f;
+                s.subjectAura = 0.3f;
+            });
+            snap("6B_subject_white_outline", image, true, s -> {
+                s.subjectRim = 0.8f;
+                s.subjectRimColor = -1f;
+                s.style = WallpaperSettings.STYLE_NONE;
+            });
             snap("67_subject_viz_in_front", image, true, s -> s.vizFront = true);
             snap("63_subject_ring", image, true, s -> {
                 s.style = WallpaperSettings.STYLE_CIRCLE;

@@ -27,15 +27,18 @@ final class SubjectLayer {
         final Bitmap cutout;
         /** White with the silhouette as alpha; tinted when drawn. */
         final Bitmap aura;
+        /** White with the outline as alpha (a bright line with a soft halo); tinted when drawn. */
+        final Bitmap rim;
         /** The subject's center, as a fraction of the image (for scaling it about itself). */
         final float centerX;
         final float centerY;
         /** How much of the depth effect this subject gets: nearer subjects move more. */
         float depth = 1f;
 
-        Part(Bitmap cutout, Bitmap aura, float centerX, float centerY) {
+        Part(Bitmap cutout, Bitmap aura, Bitmap rim, float centerX, float centerY) {
             this.cutout = cutout;
             this.aura = aura;
+            this.rim = rim;
             this.centerX = centerX;
             this.centerY = centerY;
         }
@@ -93,7 +96,8 @@ final class SubjectLayer {
             multiplyAlpha(cutout, edge, mw, mh);
             float[] soft = blur(scale(m, mw, mh, AURA_SIDE), auraW(mw, mh), auraH(mw, mh), 3, 3);
             Bitmap aura = alphaBitmap(soft, auraW(mw, mh), auraH(mw, mh));
-            parts.add(new Part(cutout, aura, cx, cy));
+            Bitmap rim = alphaBitmap(rim(m, mw, mh), mw, mh);
+            parts.add(new Part(cutout, aura, rim, cx, cy));
             bottoms.add(lowest / (float) mh);
         }
         if (parts.isEmpty()) {
@@ -122,11 +126,32 @@ final class SubjectLayer {
         for (Part p : parts) {
             p.cutout.recycle();
             p.aura.recycle();
+            p.rim.recycle();
         }
         plate.recycle();
     }
 
     // ---- mask helpers (plain float grids, 0..1) ----
+
+    /**
+     * The outline of a subject: a thin bright line where the mask crosses its
+     * middle, plus a soft halo around it, so it reads as neon light on the edge.
+     */
+    static float[] rim(float[] m, int w, int h) {
+        float[] soft = blur(m, w, h, 1, 2);
+        float[] line = new float[soft.length];
+        for (int i = 0; i < soft.length; i++) {
+            // Peaks at 1 where the (softened) mask is one half: right on the edge.
+            float v = 4f * soft[i] * (1f - soft[i]);
+            line[i] = v * v;
+        }
+        float[] halo = blur(line, w, h, 3, 3);
+        float[] out = new float[line.length];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = Math.min(1f, line[i] + 1.6f * halo[i]);
+        }
+        return out;
+    }
 
     /**
      * The subjects in a mask: one grid for a gray mask, else one per color

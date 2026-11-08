@@ -70,6 +70,10 @@ final class WallpaperRenderer {
     private WallpaperSettings paletteSettings;
     private final VisualizerStyles.Palette palette = position -> colorAt(paletteSettings, position);
     private int auraTint;
+    private final Paint rimPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private int rimTint;
+    /** This frame's beat, for drawing code that isn't handed it. */
+    private float beatLevel;
     private float[] accentHues = DEFAULT_HUES;
     private float time;
     private float swayPhase;
@@ -311,14 +315,15 @@ final class WallpaperRenderer {
         this.framed = framed;
     }
 
-    /** Battery saving: draws fewer particles. */
+    /** Battery saving: draws fewer particles (and pauses screen effects, if chosen). */
     void setSaving(boolean saving) {
         this.saving = saving;
     }
 
     void draw(Canvas canvas, int w, int h, AudioAnalyzer audio, WallpaperSettings s, float dt) {
         boolean tapRipple = s.tapEffect == WallpaperSettings.TAP_RIPPLE;
-        if (ShaderEffects.wanted(s, canvas, tapRipple) && (fx == null || !fx.failed())) {
+        boolean effectsPaused = saving && s.saverPausesEffects;
+        if (!effectsPaused && ShaderEffects.wanted(s, canvas, tapRipple) && (fx == null || !fx.failed())) {
             if (fx == null) {
                 fx = new ShaderEffects(density);
             }
@@ -339,6 +344,7 @@ final class WallpaperRenderer {
         cyclePhase = s.colorCycle > 0f ? (cyclePhase + dt * s.colorCycle * 30f) % 360f : 0f;
         float bass = audio.bass();
         float beat = audio.beat();
+        beatLevel = beat;
         camera.update(dt, beat, s.camPunch, s.camTilt);
         if (moments != null) {
             moments.advance(dt);
@@ -505,6 +511,21 @@ final class WallpaperRenderer {
             canvas.drawBitmap(aura, auraMatrix, auraPaint);
         }
         canvas.drawBitmap(part.cutout, subjectMatrix, imagePaint);
+        if (s.subjectRim > 0f) {
+            Bitmap rim = part.rim;
+            auraMatrix.set(subjectMatrix);
+            auraMatrix.preScale(bw / (float) rim.getWidth(), bh / (float) rim.getHeight());
+            int tint = s.subjectRimColor < 0f ? Color.WHITE : colorAt(s, s.subjectRimColor);
+            if (tint != rimTint || rimPaint.getColorFilter() == null) {
+                rimTint = tint;
+                rimPaint.setColorFilter(new android.graphics.PorterDuffColorFilter(tint, PorterDuff.Mode.SRC_IN));
+            }
+            rimPaint.setXfermode(ADD);
+            // Always faintly lit; flares with the beat and bass.
+            float flare = Math.max(beatLevel, bass);
+            rimPaint.setAlpha((int) (255 * Math.min(1f, s.subjectRim * (0.35f + 0.9f * flare))));
+            canvas.drawBitmap(rim, auraMatrix, rimPaint);
+        }
     }
 
     private void drawBackground(Canvas canvas, int w, int h, WallpaperSettings s, float bass, float beat) {
