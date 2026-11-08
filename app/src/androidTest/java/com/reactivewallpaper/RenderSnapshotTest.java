@@ -94,7 +94,8 @@ public class RenderSnapshotTest {
         // Times the first strike to land just before the shot.
         WeatherLayer.firstStrikeSeconds = 0.033f * 88;
         try {
-            snap("83_weather_storm", image, true, s -> {
+            // Without music, so no beat strike comes first and resets the timer.
+            snap("83_weather_storm", image, false, s -> {
                 s.weatherMode = Weather.STORM;
                 s.weatherAmount = 1f;
             });
