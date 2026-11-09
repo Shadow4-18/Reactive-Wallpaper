@@ -24,9 +24,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * Places the character's skeleton on the picture: a first guess (from body
- * pose detection for people, else from the subject's shape), then drag any
- * dot to where that joint really is. Arms and hair can be switched off for
+ * Places the character's skeleton on the picture: a first guess from the
+ * subject's shape and ordinary figure proportions, then drag any dot to
+ * where that joint really is. Arms and hair can be switched off for
  * pictures where they aren't visible.
  */
 public class RigActivity extends Activity {
@@ -178,7 +178,7 @@ public class RigActivity extends Activity {
         }).start();
     }
 
-    /** From the subject's shape first, then refined by pose detection when it finds a person. */
+    /** From the subject's shape, by ordinary figure proportions. */
     private void autoPlace(Switch arms, Switch hair) {
         if (image == null) {
             return;
@@ -192,15 +192,7 @@ public class RigActivity extends Activity {
         rig.arms = arms.isChecked();
         rig.hair = hair.isChecked();
         view.invalidate();
-        status.setText("Looking for a person's pose…");
-        PoseGuess.refine(image, rig, found -> {
-            if (isDestroyed()) {
-                return;
-            }
-            status.setText(found ? "Placed from the person's pose. Drag any dot to adjust."
-                    : "Placed from the subject's shape. Drag the dots onto the right parts.");
-            view.invalidate();
-        });
+        status.setText("Placed from the subject's shape. Drag any dot that's off.");
     }
 
     @Override

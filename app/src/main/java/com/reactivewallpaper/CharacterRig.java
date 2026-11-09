@@ -110,10 +110,11 @@ final class CharacterRig {
     // ---- placing it from the subject's shape ----
 
     /**
-     * A first guess from the subject mask's shape (w x h, 0..1): head at the
-     * top, hips lower down (or at the bottom edge for a half-length picture),
-     * shoulders at the widest point under the head, arms hanging, hair falling
-     * either side of the head. Null if the mask is empty.
+     * A first guess from the subject mask's shape (w x h, 0..1), by ordinary
+     * figure proportions: the figure's height in head-heights tells where
+     * neck, shoulders, chest, hips, elbows and hands fall; a picture cut off at
+     * the bottom is taken as half-length. Hair falls either side of the head,
+     * on the subject. Null if the mask is empty.
      */
     static CharacterRig guess(float[] mask, int w, int h) {
         int top = -1;
@@ -134,54 +135,47 @@ final class CharacterRig {
         }
         float span = bottom - top;
         boolean halfLength = bottom >= h - 2;
+        // A whole figure is about 7 heads tall; a picture cut at the waist or hips shows about 3.3.
+        float head = span / (halfLength ? 3.3f : 7.2f);
         CharacterRig r = new CharacterRig();
-        float headY = top + span * (halfLength ? 0.14f : 0.08f);
-        float neckY = top + span * (halfLength ? 0.30f : 0.16f);
-        float chestY = top + span * (halfLength ? 0.48f : 0.27f);
-        float hipsY = top + span * (halfLength ? 0.95f : 0.52f);
-        set(r, HEAD, middle(mask, w, (int) headY), headY, w, h);
-        set(r, NECK, middle(mask, w, (int) neckY), neckY, w, h);
-        set(r, CHEST, middle(mask, w, (int) chestY), chestY, w, h);
-        set(r, HIPS, middle(mask, w, (int) Math.min(h - 1, hipsY)), hipsY, w, h);
-        // Shoulders: a little in from the edges of the body just above the chest.
-        float shoulderY = neckY + (chestY - neckY) * 0.45f;
-        float[] edges = edges(mask, w, (int) shoulderY);
-        float cx = r.x[CHEST] * w;
-        float half = Math.max(2f, Math.min(cx - edges[0], edges[1] - cx) * 0.8f);
-        set(r, L_SHOULDER, cx - half, shoulderY, w, h);
-        set(r, R_SHOULDER, cx + half, shoulderY, w, h);
-        float arm = span * (halfLength ? 0.28f : 0.17f);
-        set(r, L_ELBOW, cx - half * 1.1f, shoulderY + arm, w, h);
-        set(r, L_HAND, cx - half * 1.05f, shoulderY + arm * 1.9f, w, h);
-        set(r, R_ELBOW, cx + half * 1.1f, shoulderY + arm, w, h);
-        set(r, R_HAND, cx + half * 1.05f, shoulderY + arm * 1.9f, w, h);
-        // Hair: from the sides of the head, falling down past the shoulders.
-        float[] headEdges = edges(mask, w, (int) headY);
-        float hx = r.x[HEAD] * w;
-        float headHalf = Math.max(2f, Math.min(hx - headEdges[0], headEdges[1] - hx));
-        float fall = (chestY - headY) * 0.75f;
-        for (int side = 0; side < 2; side++) {
-            float dir = side == 0 ? -1f : 1f;
-            int first = side == 0 ? L_HAIR1 : R_HAIR1;
-            for (int k = 0; k < 3; k++) {
-                set(r, first + k, hx + dir * headHalf * (0.75f + 0.15f * k), headY + fall * (0.4f + 0.8f * k), w, h);
-            }
+        float headY = top + 0.5f * head;
+        float cx = middle(mask, w, Math.round(headY + 0.6f * head));
+        set(r, HEAD, middle(mask, w, Math.round(headY)), headY, w, h);
+        set(r, NECK, cx, top + 1.0f * head, w, h);
+        set(r, CHEST, cx, top + 1.8f * head, w, h);
+        set(r, HIPS, cx, Math.min(h - 1f, top + 3.0f * head), w, h);
+        float[][] side = {
+                {L_SHOULDER, 1.3f, 0.55f}, {L_ELBOW, 2.4f, 0.75f}, {L_HAND, 3.5f, 0.95f},
+                {R_SHOULDER, 1.3f, 0.55f}, {R_ELBOW, 2.4f, 0.75f}, {R_HAND, 3.5f, 0.95f},
+                {L_HAIR1, 1.0f, 0.7f}, {L_HAIR2, 1.8f, 0.85f}, {L_HAIR3, 2.7f, 0.9f},
+                {R_HAIR1, 1.0f, 0.7f}, {R_HAIR2, 1.8f, 0.85f}, {R_HAIR3, 2.7f, 0.9f},
+        };
+        for (float[] s : side) {
+            int j = (int) s[0];
+            boolean left = j == L_SHOULDER || j == L_ELBOW || j == L_HAND || (j >= L_HAIR1 && j <= L_HAIR3);
+            float py = Math.min(h - 1f, top + s[1] * head);
+            float px = cx + (left ? -1f : 1f) * s[2] * head;
+            set(r, j, onSubject(mask, w, h, px, py, cx), py, w, h);
         }
         return r;
     }
 
-    private static void set(CharacterRig r, int j, float px, float py, int w, int h) {
-        r.x[j] = clamp01(px / Math.max(1, w - 1));
-        r.y[j] = clamp01(py / Math.max(1, h - 1));
+    /** Moves a point toward the middle until it's on the subject (so dots don't start in empty space). */
+    private static float onSubject(float[] mask, int w, int h, float px, float py, float cx) {
+        int row = Math.max(0, Math.min(h - 1, Math.round(py)));
+        float x = px;
+        for (int step = 0; step < w; step++) {
+            int col = Math.max(0, Math.min(w - 1, Math.round(x)));
+            if (mask[row * w + col] > 0.5f || Math.abs(x - cx) < 1f) {
+                return x;
+            }
+            x += x < cx ? 1f : -1f;
+        }
+        return px;
     }
 
     /** The middle of the subject along a row (or of the picture if the row is empty). */
     private static float middle(float[] mask, int w, int row) {
-        float[] e = edges(mask, w, row);
-        return (e[0] + e[1]) / 2f;
-    }
-
-    private static float[] edges(float[] mask, int w, int row) {
         int h = mask.length / w;
         row = Math.max(0, Math.min(h - 1, row));
         int left = -1;
@@ -194,7 +188,12 @@ final class CharacterRig {
                 right = xx;
             }
         }
-        return left < 0 ? new float[] {0, w - 1} : new float[] {left, right};
+        return left < 0 ? (w - 1) / 2f : (left + right) / 2f;
+    }
+
+    private static void set(CharacterRig r, int j, float px, float py, int w, int h) {
+        r.x[j] = clamp01(px / Math.max(1, w - 1));
+        r.y[j] = clamp01(py / Math.max(1, h - 1));
     }
 
     // ---- moving it ----
