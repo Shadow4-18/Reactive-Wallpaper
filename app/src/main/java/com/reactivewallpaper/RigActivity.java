@@ -166,7 +166,7 @@ public class RigActivity extends Activity {
         tools.addView(auto);
         TextView hint = new TextView(this);
         hint.setText("Drag each dot onto that part of the character, and the green dots onto the middle "
-                + "of each eye. Turn off arms or hair if they aren't in the picture. The character then sways, "
+                + "of each eye. Pinch to zoom in; two fingers move around, double-tap shows it all. Turn off arms or hair if they aren't in the picture. The character then sways, "
                 + "bobs with the music, blinks, and its hair swings.");
         hint.setTextColor(getColor(R.color.text_secondary));
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -278,6 +278,44 @@ public class RigActivity extends Activity {
         private final Matrix fit = new Matrix();
         private final RectF bounds = new RectF();
         private int dragging = -1;
+        // Pinch to zoom, two fingers to move around, double-tap to see it all again.
+        private float zoom = 1f;
+        private float panX;
+        private float panY;
+        private float lastFocusX;
+        private float lastFocusY;
+        private boolean multiTouch;
+        private long lastTapTime;
+        private final android.view.ScaleGestureDetector scaler = new android.view.ScaleGestureDetector(
+                RigActivity.this, new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScale(android.view.ScaleGestureDetector d) {
+                        float before = zoom;
+                        zoom = Math.max(1f, Math.min(8f, zoom * d.getScaleFactor()));
+                        // Keep the point under the fingers where it is.
+                        float k = zoom / before;
+                        float cx = getWidth() / 2f + panX;
+                        float cy = getHeight() / 2f + panY;
+                        panX += (d.getFocusX() - cx) * (1 - k);
+                        panY += (d.getFocusY() - cy) * (1 - k);
+                        clampPan();
+                        invalidate();
+                        return true;
+                    }
+                });
+
+        private void clampPan() {
+            if (image == null) {
+                return;
+            }
+            float scale = Math.min(getWidth() / (float) image.getWidth(), getHeight() / (float) image.getHeight());
+            float w = image.getWidth() * scale * zoom;
+            float h = image.getHeight() * scale * zoom;
+            float maxX = Math.max(0f, (w - getWidth()) / 2f);
+            float maxY = Math.max(0f, (h - getHeight()) / 2f);
+            panX = Math.max(-maxX, Math.min(maxX, panX));
+            panY = Math.max(-maxY, Math.min(maxY, panY));
+        }
 
         RigView() {
             super(RigActivity.this);
@@ -308,9 +346,11 @@ public class RigActivity extends Activity {
                 return;
             }
             float scale = Math.min(getWidth() / (float) image.getWidth(), getHeight() / (float) image.getHeight());
-            float w = image.getWidth() * scale;
-            float h = image.getHeight() * scale;
-            bounds.set((getWidth() - w) / 2f, (getHeight() - h) / 2f, (getWidth() + w) / 2f, (getHeight() + h) / 2f);
+            float w = image.getWidth() * scale * zoom;
+            float h = image.getHeight() * scale * zoom;
+            float cx = getWidth() / 2f + panX;
+            float cy = getHeight() / 2f + panY;
+            bounds.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f);
             fit.setRectToRect(new RectF(0, 0, image.getWidth(), image.getHeight()), bounds, Matrix.ScaleToFit.FILL);
             canvas.drawBitmap(image, fit, null);
             if (rig == null) {
@@ -359,8 +399,34 @@ public class RigActivity extends Activity {
             if (rig == null) {
                 return false;
             }
+            scaler.onTouchEvent(e);
+            if (e.getPointerCount() > 1) {
+                // Two fingers: zoom (above) and move around; no dot is dragged.
+                float fx = 0f;
+                float fy = 0f;
+                for (int i = 0; i < e.getPointerCount(); i++) {
+                    fx += e.getX(i);
+                    fy += e.getY(i);
+                }
+                fx /= e.getPointerCount();
+                fy /= e.getPointerCount();
+                if (!multiTouch || e.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN
+                        || e.getActionMasked() == MotionEvent.ACTION_POINTER_UP) {
+                    multiTouch = true;
+                } else {
+                    panX += fx - lastFocusX;
+                    panY += fy - lastFocusY;
+                    clampPan();
+                }
+                lastFocusX = fx;
+                lastFocusY = fy;
+                dragging = -1;
+                invalidate();
+                return true;
+            }
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
+                    multiTouch = false;
                     dragging = -1;
                     float best = dp(36);
                     for (int j = 0; j < CharacterRig.COUNT + 2; j++) {
@@ -373,10 +439,22 @@ public class RigActivity extends Activity {
                             dragging = j;
                         }
                     }
+                    if (dragging < 0) {
+                        // Double-tap on empty space: back to the whole picture.
+                        if (e.getEventTime() - lastTapTime < 300) {
+                            zoom = 1f;
+                            panX = 0f;
+                            panY = 0f;
+                            lastTapTime = 0;
+                        } else {
+                            lastTapTime = e.getEventTime();
+                        }
+                    }
                     invalidate();
-                    return dragging >= 0;
+                    // Keep the gesture either way, so a second finger can zoom.
+                    return true;
                 case MotionEvent.ACTION_MOVE:
-                    if (dragging >= 0) {
+                    if (dragging >= 0 && !multiTouch) {
                         float nx = Math.max(0f, Math.min(1f, (e.getX() - bounds.left) / bounds.width()));
                         float ny = Math.max(0f, Math.min(1f, (e.getY() - bounds.top) / bounds.height()));
                         if (dragging >= CharacterRig.COUNT) {
