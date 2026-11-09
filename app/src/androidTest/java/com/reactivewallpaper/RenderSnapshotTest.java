@@ -265,6 +265,16 @@ public class RenderSnapshotTest {
                 s.subjectDepth = 1f;
                 s.tiltParallax = 1f;
             });
+            tiltX = 0f;
+            int gh = Math.round(96f * image.getHeight() / image.getWidth());
+            float[] grid = SubjectLayer.readMasks(subjectMask, 96, gh).get(0);
+            String rig = CharacterRig.guess(grid, 96, gh).encode();
+            snap("6D_subject_rigged_dancing", image, true, s -> {
+                s.rig = rig;
+                s.rigAmount = 1f;
+                s.subjectRim = 0.8f;
+            });
+            tiltX = 1f;
             snap("6C_depth_tilted", image, true, s -> {
                 s.depth3d = 1f;
                 s.depthDrift = false;

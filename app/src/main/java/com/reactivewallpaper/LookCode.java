@@ -32,7 +32,7 @@ final class LookCode {
 
     /** Settings that belong to the phone or the picture, not to a look. */
     private static final String[] LEFT_OUT = {
-            "imageVersion", "mediaType", "fitMode", "imageZoom", "imagePanX", "imagePanY", "edgeStyle",
+            "imageVersion", "mediaType", "rig", "fitMode", "imageZoom", "imagePanX", "imagePanY", "edgeStyle",
             "hideEdges", "source", "syncSpeakerMs", "syncBluetoothMs", "batterySaver", "sleepMinutes",
             "maxFps", "notifyPulse", "notifyUseAppColor", "saverPercent", "saverWhenHot", "saverPausesEffects"};
 

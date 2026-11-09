@@ -173,6 +173,10 @@ final class WallpaperSettings {
     float subjectAura = 0.5f;
     /** A neon line along the subject's outline that flares on the beat, 0 .. 1. */
     float subjectRim = 0f;
+    /** The subject's skeleton ({@link CharacterRig#encode}), "" for none. Belongs to the picture. */
+    String rig = "";
+    /** How much the rigged character moves with the music, 0 .. 1. */
+    float rigAmount = 0.7f;
 
     // Weather over the wallpaper.
     static final int WEATHER_OFF = -1;
@@ -257,6 +261,10 @@ final class WallpaperSettings {
         boolean getBoolean(String key, boolean def);
 
         long getLong(String key, long def);
+
+        default String getString(String key, String def) {
+            return def;
+        }
     }
 
     interface Writer {
@@ -267,6 +275,9 @@ final class WallpaperSettings {
         void putBoolean(String key, boolean value);
 
         void putLong(String key, long value);
+
+        default void putString(String key, String value) {
+        }
     }
 
     private static final String KEY_LOCK_LOOK = "lockLookId";
@@ -515,6 +526,11 @@ final class WallpaperSettings {
             public long getLong(String key, long def) {
                 return p.getLong(key, def);
             }
+
+            @Override
+            public String getString(String key, String def) {
+                return p.getString(key, def);
+            }
         });
     }
 
@@ -580,6 +596,11 @@ final class WallpaperSettings {
         s.subjectDepth = p.getFloat("subjectDepth", s.subjectDepth);
         s.subjectAura = p.getFloat("subjectAura", s.subjectAura);
         s.subjectRim = p.getFloat("subjectRim", s.subjectRim);
+        s.rig = p.getString("rig", s.rig);
+        if (s.rig == null) {
+            s.rig = "";
+        }
+        s.rigAmount = p.getFloat("rigAmount", s.rigAmount);
         s.weatherMode = p.getInt("weatherMode", s.weatherMode);
         s.weatherAmount = p.getFloat("weatherAmount", s.weatherAmount);
         s.subjectRimColor = p.getFloat("subjectRimColor", s.subjectRimColor);
@@ -647,6 +668,11 @@ final class WallpaperSettings {
             public void putLong(String key, long value) {
                 editor.putLong(key, value);
             }
+
+            @Override
+            public void putString(String key, String value) {
+                editor.putString(key, value);
+            }
         });
         editor.apply();
     }
@@ -705,6 +731,8 @@ final class WallpaperSettings {
         w.putFloat("subjectDepth", subjectDepth);
         w.putFloat("subjectAura", subjectAura);
         w.putFloat("subjectRim", subjectRim);
+        w.putString("rig", rig);
+        w.putFloat("rigAmount", rigAmount);
         w.putInt("weatherMode", weatherMode);
         w.putFloat("weatherAmount", weatherAmount);
         w.putFloat("subjectRimColor", subjectRimColor);
@@ -763,6 +791,7 @@ final class WallpaperSettings {
         imagePanY = other.imagePanY;
         edgeStyle = other.edgeStyle;
         hideEdges = other.hideEdges;
+        rig = other.rig;
     }
 
     /** Back to centered at the fit's own size, for a newly chosen picture. */
@@ -819,6 +848,11 @@ final class WallpaperSettings {
             public void putLong(String key, long value) {
                 map.put(key, value);
             }
+
+            @Override
+            public void putString(String key, String value) {
+                map.put(key, value);
+            }
         });
         return map;
     }
@@ -854,6 +888,12 @@ final class WallpaperSettings {
             public long getLong(String key, long def) {
                 Object v = map.get(key);
                 return v instanceof Long ? (Long) v : def;
+            }
+
+            @Override
+            public String getString(String key, String def) {
+                Object v = map.get(key);
+                return v instanceof String ? (String) v : def;
             }
         });
     }

@@ -63,6 +63,10 @@
         </activity>
 
         <activity
+            android:name=".RigActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".GlowPaintActivity"
             android:exported="false" />
 

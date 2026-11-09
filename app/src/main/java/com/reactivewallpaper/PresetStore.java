@@ -344,6 +344,8 @@ final class PresetStore {
      */
     static WallpaperSettings apply(Context context, Preset preset, WallpaperSettings current) {
         WallpaperSettings next = fromJson(preset.look).keepDeviceSettingsFrom(current);
+        // A character's skeleton belongs to its picture: a look without one keeps the current.
+        next.rig = current.rig;
         if (preset.hasImage && imageFile(context, preset.id).length() > 0) {
             ImageStore.copy(picture(context, preset.id), ImageStore.draft(context));
             next.imageVersion = System.currentTimeMillis();
@@ -445,6 +447,11 @@ final class PresetStore {
                 put(key, value);
             }
 
+            @Override
+            public void putString(String key, String value) {
+                put(key, value);
+            }
+
             private void put(String key, Object value) {
                 try {
                     o.put(key, value);
@@ -476,6 +483,11 @@ final class PresetStore {
             @Override
             public long getLong(String key, long def) {
                 return o.optLong(key, def);
+            }
+
+            @Override
+            public String getString(String key, String def) {
+                return o.optString(key, def);
             }
         });
     }

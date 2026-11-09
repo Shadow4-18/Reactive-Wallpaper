@@ -346,6 +346,7 @@ public class ReactiveWallpaperService extends WallpaperService {
         private Look lookFor(PresetStore.Preset preset) {
             WallpaperSettings own = PresetStore.fromJson(preset.look);
             WallpaperSettings s = PresetStore.fromJson(preset.look).keepDeviceSettingsFrom(live);
+            s.rig = live.rig;
             if (preset.hasImage) {
                 s.mediaType = own.mediaType;
                 s.copyFramingFrom(own);
@@ -626,7 +627,7 @@ public class ReactiveWallpaperService extends WallpaperService {
             if (idle && !slot.isFading() && !slot.isBusy()) {
                 boolean moving = s.mediaType != WallpaperSettings.MEDIA_IMAGE && !(s.albumArt && art != null);
                 boolean animated = moving || s.breathe > 0f || s.sparkleAmount > 0f || s.sway > 0f
-                        || (s.depth3d > 0f && s.depthDrift)
+                        || (s.depth3d > 0f && s.depthDrift) || (s.rigAmount > 0f && !s.rig.isEmpty())
                         || s.colorCycle > 0f || s.tiltParallax > 0f;
                 if (animated) {
                     delay = saving ? SAVER_AMBIENT_FRAME_MS : AMBIENT_FRAME_MS;

@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
     private static final int REQUEST_PAINT = 3;
     private static final int REQUEST_DIAGNOSTICS = 6;
     private static final int REQUEST_SUBJECT = 7;
+    private static final int REQUEST_RIG = 12;
     private static final int REQUEST_SAVE_CLIP = 8;
     private static final int REQUEST_GALLERY = 9;
     private static final int REQUEST_CAPTURE = 11;
@@ -370,6 +371,37 @@ public class MainActivity extends Activity {
                 () -> s.subjectDepth, v -> s.subjectDepth = v, Controls::percent);
         ui.slider(subject, "Light behind the subject", 0f, 1f,
                 () -> s.subjectAura, v -> s.subjectAura = v, Controls::percent);
+        if (!moving) {
+            Button rigButton = new Button(this);
+            rigButton.setText(s.rig.isEmpty() ? "Make the character move (place a skeleton)"
+                    : "Adjust the character's skeleton");
+            rigButton.setOnClickListener(v -> {
+                if (!ImageStore.draftSubjectFile(this).isFile()) {
+                    Toast.makeText(this, "Mark the subject first, then place its skeleton.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Intent intent = new Intent(this, RigActivity.class);
+                intent.putExtra(RigActivity.EXTRA_RIG, settings.rig);
+                startActivityForResult(intent, REQUEST_RIG);
+            });
+            subject.addView(rigButton, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            if (!s.rig.isEmpty()) {
+                ui.slider(subject, "Character motion (sway, nod, arms, hair)", 0f, 1f,
+                        () -> s.rigAmount, v -> s.rigAmount = v, Controls::percent);
+                Button removeRig = new Button(this);
+                removeRig.setText("Remove the skeleton");
+                removeRig.setOnClickListener(v -> {
+                    settings.rig = "";
+                    saveDraft();
+                    preview.setSettings(settings);
+                    buildControls();
+                });
+                subject.addView(removeRig, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+        }
         ui.slider(subject, "Neon outline (flares on the beat)", 0f, 1f,
                 () -> s.subjectRim, v -> s.subjectRim = v, Controls::percent);
         ui.label(subject, "Outline color");
@@ -1305,6 +1337,20 @@ public class MainActivity extends Activity {
         if (looksUi.onActivityResult(requestCode, resultCode, data)) {
             return;
         }
+        if (requestCode == REQUEST_RIG && resultCode == RESULT_OK && data != null) {
+            String rig = data.getStringExtra(RigActivity.EXTRA_RIG);
+            if (rig != null) {
+                settings.rig = rig;
+                if (settings.rigAmount <= 0f) {
+                    settings.rigAmount = 0.7f;
+                }
+                settings.subjectFront = true;
+                saveDraft();
+                preview.setSettings(settings);
+                buildControls();
+            }
+            return;
+        }
         if ((requestCode == REQUEST_PAINT || requestCode == REQUEST_SUBJECT) && resultCode == RESULT_OK) {
             // The painted mask counts as an image change: preview and wallpaper reload both.
             settings.imageVersion = System.currentTimeMillis();
@@ -1340,6 +1386,8 @@ public class MainActivity extends Activity {
                 settings.mediaType = mediaType;
                 // A new picture starts centered; the fill mode the user prefers stays.
                 settings.resetPosition();
+                // A character's skeleton belongs to the old picture.
+                settings.rig = "";
                 saveDraft();
                 loadPreviewImage();
             });

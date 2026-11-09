@@ -363,6 +363,8 @@ final class WallpaperRenderer {
         // Hardware bitmaps (video frames) can only be drawn on a hardware canvas.
         mediaFrame = media != null && canvas.isHardwareAccelerated() ? media.frame() : null;
 
+        // Before the background: a moving character needs the background without it behind.
+        updateRig(s, bass, beat, dt);
         drawBackground(canvas, w, h, s, bass, beat);
         if (living != null) {
             if (Math.abs(living.coverage() - s.glowCoverage) > 0.001f) {
@@ -600,6 +602,23 @@ final class WallpaperRenderer {
      * a little more than the background with tilt and sway and steps toward
      * the viewer on bass, so it reads as standing in front.
      */
+    private CharacterRig rig;
+    private String rigText = "";
+    private boolean rigActive;
+
+    /** Moves the rigged character (if the look has one) for this frame. */
+    private void updateRig(WallpaperSettings s, float bass, float beat, float dt) {
+        if (!s.rig.equals(rigText)) {
+            rigText = s.rig;
+            rig = CharacterRig.decode(s.rig);
+        }
+        rigActive = rig != null && s.rigAmount > 0f && subjectShown(s);
+        if (rigActive) {
+            rig.animate(dt, bass, beat, s.rigAmount);
+            rig.prepare(image.getWidth(), image.getHeight());
+        }
+    }
+
     private void drawSubject(Canvas canvas, WallpaperSettings s, float bass) {
         // Back to front; each subject moves by its own share of the depth.
         for (SubjectLayer.Part part : subject.parts) {
@@ -636,7 +655,11 @@ final class WallpaperRenderer {
             auraPaint.setAlpha((int) (255 * Math.min(1f, s.subjectAura * (0.3f + 0.9f * bass))));
             canvas.drawBitmap(aura, auraMatrix, auraPaint);
         }
-        canvas.drawBitmap(part.cutout, subjectMatrix, imagePaint);
+        if (rigActive) {
+            rig.draw(canvas, part.cutout, subjectMatrix, imagePaint);
+        } else {
+            canvas.drawBitmap(part.cutout, subjectMatrix, imagePaint);
+        }
         if (s.subjectRim > 0f) {
             Bitmap rim = part.rim;
             auraMatrix.set(subjectMatrix);
@@ -650,7 +673,11 @@ final class WallpaperRenderer {
             // Always faintly lit; flares with the beat and bass.
             float flare = Math.max(beatLevel, bass);
             rimPaint.setAlpha((int) (255 * Math.min(1f, s.subjectRim * (0.35f + 0.9f * flare))));
-            canvas.drawBitmap(rim, auraMatrix, rimPaint);
+            if (rigActive) {
+                rig.draw(canvas, rim, auraMatrix, rimPaint);
+            } else {
+                canvas.drawBitmap(rim, auraMatrix, rimPaint);
+            }
         }
     }
 
@@ -755,7 +782,7 @@ final class WallpaperRenderer {
             canvas.drawBitmap(mediaFrame, mediaMatrix, imagePaint);
         } else {
             // When the subject moves apart from the background, show the background without it.
-            boolean lifted = subjectShown(s) && s.subjectDepth > 0.01f;
+            boolean lifted = subjectShown(s) && (s.subjectDepth > 0.01f || rigActive);
             Bitmap background = lifted ? subject.plate : image;
             if (depthActive) {
                 depthWarp.draw(canvas, background, matrix, imagePaint);
