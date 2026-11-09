@@ -15,6 +15,11 @@ on:
         description: "What's new in this release (shown in the app's update banner)."
         required: false
         default: ''
+      test:
+        description: 'Test build: publish as a pre-release, which the in-app updater never offers.'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -71,7 +76,8 @@ jobs:
         with:
           tag_name: ${{ inputs.version || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: Resona ${{ inputs.version || github.ref_name }}
+          name: Resona ${{ inputs.version || github.ref_name }}${{ inputs.test && ' (test build)' || '' }}
+          prerelease: ${{ inputs.test == true }}
           # The app shows everything above the --- line as "what's new".
           body: |
             ${{ inputs.notes }}
