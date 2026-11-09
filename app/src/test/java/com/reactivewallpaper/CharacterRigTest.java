@@ -100,7 +100,7 @@ public class CharacterRigTest {
         assertEquals(r.eyeX[1], back.eyeX[1], 1e-3f);
         assertTrue(back.blink);
         // Older skeletons (before eyes) still load, without blinking.
-        String old = r.encode().replaceFirst("^r2;1;1;1;[0-9.]+;", "r1;1;1;");
+        String old = r.encode().replaceFirst("^r3;1;1;1;[0-9.,]+;", "r1;1;1;");
         old = old.substring(0, old.lastIndexOf(';'));
         old = old.substring(0, old.lastIndexOf(';'));
         CharacterRig legacy = CharacterRig.decode(old);

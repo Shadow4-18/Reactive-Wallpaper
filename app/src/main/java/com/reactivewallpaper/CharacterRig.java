@@ -55,10 +55,12 @@ final class CharacterRig {
     final float[] y = new float[COUNT];
     boolean arms = true;
     boolean hair = true;
-    /** Eye centers on the picture (left, right), 0..1, and their size as a fraction of its width. */
+    /** Eye centers on the picture (left, right), 0..1. */
     final float[] eyeX = new float[2];
     final float[] eyeY = new float[2];
-    float eyeSize = 0.03f;
+    /** Each eye's width and height, as fractions of the picture's width. */
+    final float[] eyeW = {0.03f, 0.03f};
+    final float[] eyeH = {0.021f, 0.021f};
     boolean blink = true;
 
     boolean used(int j) {
@@ -73,7 +75,8 @@ final class CharacterRig {
         r.hair = hair;
         System.arraycopy(eyeX, 0, r.eyeX, 0, 2);
         System.arraycopy(eyeY, 0, r.eyeY, 0, 2);
-        r.eyeSize = eyeSize;
+        System.arraycopy(eyeW, 0, r.eyeW, 0, 2);
+        System.arraycopy(eyeH, 0, r.eyeH, 0, 2);
         r.blink = blink;
         return r;
     }
@@ -83,8 +86,10 @@ final class CharacterRig {
         float head = Math.abs(y[NECK] - y[HEAD]) * pictureHeight;
         // (Proportions of a drawn face, which has big eyes; the editor's dots fix any picture.)
         float ex = 0.36f * head / pictureWidth;
-        eyeSize = Math.max(0.01f, Math.min(0.08f, 0.36f * head / pictureWidth));
+        float size = Math.max(0.01f, Math.min(0.08f, 0.36f * head / pictureWidth));
         for (int side = 0; side < 2; side++) {
+            eyeW[side] = size;
+            eyeH[side] = size * 0.7f;
             eyeX[side] = clamp01(x[HEAD] + (side == 0 ? -ex : ex));
             eyeY[side] = clamp01(y[HEAD]);
         }
@@ -93,8 +98,9 @@ final class CharacterRig {
     // ---- saving ----
 
     String encode() {
-        StringBuilder b = new StringBuilder("r2;").append(arms ? 1 : 0).append(';').append(hair ? 1 : 0)
-                .append(';').append(blink ? 1 : 0).append(';').append(String.format(Locale.US, "%.4f", eyeSize));
+        StringBuilder b = new StringBuilder("r3;").append(arms ? 1 : 0).append(';').append(hair ? 1 : 0)
+                .append(';').append(blink ? 1 : 0).append(';').append(String.format(Locale.US, "%.4f,%.4f,%.4f,%.4f",
+                        eyeW[0], eyeH[0], eyeW[1], eyeH[1]));
         for (int j = 0; j < COUNT; j++) {
             b.append(';').append(String.format(Locale.US, "%.4f,%.4f", x[j], y[j]));
         }
@@ -109,7 +115,8 @@ final class CharacterRig {
         if (text == null) {
             return null;
         }
-        boolean v2 = text.startsWith("r2;");
+        boolean v3 = text.startsWith("r3;");
+        boolean v2 = v3 || text.startsWith("r2;");
         if (!v2 && !text.startsWith("r1;")) {
             return null;
         }
@@ -129,7 +136,19 @@ final class CharacterRig {
             }
             if (v2) {
                 r.blink = "1".equals(parts[3]);
-                r.eyeSize = Math.max(0.005f, Math.min(0.1f, Float.parseFloat(parts[4])));
+                String[] sizes = parts[4].split(",");
+                if (v3) {
+                    for (int side = 0; side < 2; side++) {
+                        r.eyeW[side] = clampEye(Float.parseFloat(sizes[side * 2]));
+                        r.eyeH[side] = clampEye(Float.parseFloat(sizes[side * 2 + 1]));
+                    }
+                } else {
+                    float size = clampEye(Float.parseFloat(sizes[0]));
+                    for (int side = 0; side < 2; side++) {
+                        r.eyeW[side] = size;
+                        r.eyeH[side] = size * 0.7f;
+                    }
+                }
                 for (int side = 0; side < 2; side++) {
                     String[] xy = parts[first + COUNT + side].split(",");
                     r.eyeX[side] = clamp01(Float.parseFloat(xy[0]));
@@ -144,6 +163,10 @@ final class CharacterRig {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    static float clampEye(float v) {
+        return Math.max(0.004f, Math.min(0.15f, v));
     }
 
     private static float clamp01(float v) {
@@ -511,7 +534,7 @@ final class CharacterRig {
 
     private static final int EYE_MESH = 12;
     private final java.util.WeakHashMap<Bitmap, Bitmap[]> eyePatches = new java.util.WeakHashMap<>();
-    private final android.graphics.Rect[] eyeRects = {new android.graphics.Rect(), new android.graphics.Rect()};
+    private final java.util.WeakHashMap<Bitmap, android.graphics.Rect[]> eyeRectsFor = new java.util.WeakHashMap<>();
     private final float[] eyePoints = new float[(EYE_MESH + 1) * (EYE_MESH + 1) * 2];
     private final float[] eyeVerts = new float[(EYE_MESH + 1) * (EYE_MESH + 1) * 2];
     private final int[] near = new int[INFLUENCES];
@@ -533,12 +556,14 @@ final class CharacterRig {
         float sx = bitmap.getWidth() / (float) pw;
         float sy = bitmap.getHeight() / (float) ph;
         Bitmap[] patches = eyePatches.get(bitmap);
-        if (patches == null) {
+        android.graphics.Rect[] eyeRects = eyeRectsFor.get(bitmap);
+        if (patches == null || eyeRects == null) {
             patches = new Bitmap[2];
+            eyeRects = new android.graphics.Rect[] {new android.graphics.Rect(), new android.graphics.Rect()};
+            eyeRectsFor.put(bitmap, eyeRects);
             for (int side = 0; side < 2; side++) {
-                float hw = eyeSize * pw / 2f;
-                float rx = hw * 1.7f;
-                float ry = hw * 1.5f;
+                float rx = eyeW[side] * pw / 2f * 1.7f;
+                float ry = Math.max(eyeH[side] * pw / 2f * 2.4f, rx * 0.6f);
                 android.graphics.Rect r = eyeRects[side];
                 r.set(Math.max(0, Math.round((eyeX[side] * pw - rx) * sx)),
                         Math.max(0, Math.round((eyeY[side] * ph - ry) * sy)),
@@ -558,7 +583,7 @@ final class CharacterRig {
             android.graphics.Rect r = eyeRects[side];
             float ex = eyeX[side] * pw;
             float ey = eyeY[side] * ph;
-            float hh = eyeSize * pw / 2f * 0.7f;
+            float hh = eyeH[side] * pw / 2f;
             // The lids meet a little below the eye's middle, as upper lids do most of the work.
             float lid = ey + 0.3f * hh;
             float left = r.left / sx;
