@@ -40,6 +40,13 @@ public class RigActivity extends Activity {
     private int maskW;
     private int maskH;
     private CharacterRig rig;
+    private Switch blinkSwitch;
+    private android.widget.SeekBar eyeSize;
+
+    private void showEyeControls() {
+        blinkSwitch.setChecked(rig.blink);
+        eyeSize.setProgress(Math.round((rig.eyeSize - 0.008f) / 0.072f * 100f));
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -114,15 +121,53 @@ public class RigActivity extends Activity {
                 view.invalidate();
             }
         });
+        Switch blink = new Switch(this);
+        blink.setText("Blink");
+        blink.setTextColor(getColor(R.color.text_primary));
+        blink.setChecked(true);
+        blink.setOnCheckedChangeListener((b, on) -> {
+            if (rig != null) {
+                rig.blink = on;
+                view.invalidate();
+            }
+        });
+        blinkSwitch = blink;
         switches.addView(arms, new LinearLayout.LayoutParams(0, dp(48), 1f));
         switches.addView(hair, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        switches.addView(blink, new LinearLayout.LayoutParams(0, dp(48), 1f));
         tools.addView(switches);
+        TextView eyeLabel = new TextView(this);
+        eyeLabel.setText("Eye size (the green circles should just cover the eyes)");
+        eyeLabel.setTextColor(getColor(R.color.text_secondary));
+        eyeLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        tools.addView(eyeLabel);
+        eyeSize = new android.widget.SeekBar(this);
+        eyeSize.setMax(100);
+        eyeSize.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(android.widget.SeekBar bar, int progress, boolean fromUser) {
+                if (fromUser && rig != null) {
+                    rig.eyeSize = 0.008f + 0.072f * progress / 100f;
+                    view.invalidate();
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(android.widget.SeekBar bar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(android.widget.SeekBar bar) {
+            }
+        });
+        tools.addView(eyeSize);
         Button auto = flatButton("Place it automatically again");
         auto.setOnClickListener(v -> autoPlace(arms, hair));
         tools.addView(auto);
         TextView hint = new TextView(this);
-        hint.setText("Drag each dot onto that part of the character. Turn off arms or hair if they "
-                + "aren't in the picture. The character then sways, nods on the beat and its hair swings.");
+        hint.setText("Drag each dot onto that part of the character, and the green dots onto the middle "
+                + "of each eye. Turn off arms or hair if they aren't in the picture. The character then sways, "
+                + "bobs with the music, blinks, and its hair swings.");
         hint.setTextColor(getColor(R.color.text_secondary));
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         tools.addView(hint);
@@ -167,8 +212,14 @@ public class RigActivity extends Activity {
                 maskH = finalH;
                 if (given != null) {
                     rig = given;
+                    if (getIntent().getStringExtra(EXTRA_RIG).startsWith("r1;")) {
+                        // Saved before eyes existed: put them where a face's usually are.
+                        rig.guessEyes(image.getWidth(), image.getHeight());
+                        rig.blink = true;
+                    }
                     arms.setChecked(rig.arms);
                     hair.setChecked(rig.hair);
+                    showEyeControls();
                     status.setText("");
                     view.invalidate();
                 } else {
@@ -191,6 +242,9 @@ public class RigActivity extends Activity {
         rig = guess;
         rig.arms = arms.isChecked();
         rig.hair = hair.isChecked();
+        rig.guessEyes(image.getWidth(), image.getHeight());
+        rig.blink = blinkSwitch.isChecked();
+        showEyeControls();
         view.invalidate();
         status.setText("Placed from the subject's shape. Drag any dot that's off.");
     }
@@ -220,6 +274,7 @@ public class RigActivity extends Activity {
         private final Paint bone = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint dot = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint label = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint eye = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Matrix fit = new Matrix();
         private final RectF bounds = new RectF();
         private int dragging = -1;
@@ -235,11 +290,16 @@ public class RigActivity extends Activity {
         }
 
         private float px(int j) {
-            return bounds.left + rig.x[j] * bounds.width();
+            return bounds.left + (j >= CharacterRig.COUNT ? rig.eyeX[j - CharacterRig.COUNT] : rig.x[j]) * bounds.width();
         }
 
         private float py(int j) {
-            return bounds.top + rig.y[j] * bounds.height();
+            return bounds.top + (j >= CharacterRig.COUNT ? rig.eyeY[j - CharacterRig.COUNT] : rig.y[j])
+                    * bounds.height();
+        }
+
+        private boolean shown(int j) {
+            return j >= CharacterRig.COUNT ? rig.blink : rig.used(j);
         }
 
         @Override
@@ -275,8 +335,22 @@ public class RigActivity extends Activity {
                         : CharacterRig.isArm(j) ? 0xFFFFC94F : 0xFF00E5FF);
                 canvas.drawCircle(px(j), py(j), dp(active ? 10 : 7), dot);
             }
+            if (rig.blink) {
+                for (int e = CharacterRig.COUNT; e < CharacterRig.COUNT + 2; e++) {
+                    boolean active = e == dragging;
+                    eye.setStyle(Paint.Style.STROKE);
+                    eye.setStrokeWidth(dp(2));
+                    eye.setColor(0xFF3DFF8F);
+                    float radius = rig.eyeSize * bounds.width() / 2f;
+                    canvas.drawOval(px(e) - radius, py(e) - radius * 0.7f, px(e) + radius, py(e) + radius * 0.7f, eye);
+                    eye.setStyle(Paint.Style.FILL);
+                    canvas.drawCircle(px(e), py(e), dp(active ? 7 : 5), eye);
+                }
+            }
             if (dragging >= 0) {
-                canvas.drawText(CharacterRig.NAMES[dragging], px(dragging) + dp(14), py(dragging) - dp(14), label);
+                String name = dragging >= CharacterRig.COUNT
+                        ? (dragging == CharacterRig.COUNT ? "Left eye" : "Right eye") : CharacterRig.NAMES[dragging];
+                canvas.drawText(name, px(dragging) + dp(14), py(dragging) - dp(14), label);
             }
         }
 
@@ -289,8 +363,8 @@ public class RigActivity extends Activity {
                 case MotionEvent.ACTION_DOWN:
                     dragging = -1;
                     float best = dp(36);
-                    for (int j = 0; j < CharacterRig.COUNT; j++) {
-                        if (!rig.used(j)) {
+                    for (int j = 0; j < CharacterRig.COUNT + 2; j++) {
+                        if (!shown(j)) {
                             continue;
                         }
                         float d = (float) Math.hypot(e.getX() - px(j), e.getY() - py(j));
@@ -303,8 +377,15 @@ public class RigActivity extends Activity {
                     return dragging >= 0;
                 case MotionEvent.ACTION_MOVE:
                     if (dragging >= 0) {
-                        rig.x[dragging] = Math.max(0f, Math.min(1f, (e.getX() - bounds.left) / bounds.width()));
-                        rig.y[dragging] = Math.max(0f, Math.min(1f, (e.getY() - bounds.top) / bounds.height()));
+                        float nx = Math.max(0f, Math.min(1f, (e.getX() - bounds.left) / bounds.width()));
+                        float ny = Math.max(0f, Math.min(1f, (e.getY() - bounds.top) / bounds.height()));
+                        if (dragging >= CharacterRig.COUNT) {
+                            rig.eyeX[dragging - CharacterRig.COUNT] = nx;
+                            rig.eyeY[dragging - CharacterRig.COUNT] = ny;
+                        } else {
+                            rig.x[dragging] = nx;
+                            rig.y[dragging] = ny;
+                        }
                         invalidate();
                     }
                     return true;

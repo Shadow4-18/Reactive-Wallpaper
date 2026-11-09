@@ -364,7 +364,7 @@ final class WallpaperRenderer {
         mediaFrame = media != null && canvas.isHardwareAccelerated() ? media.frame() : null;
 
         // Before the background: a moving character needs the background without it behind.
-        updateRig(s, bass, beat, dt);
+        updateRig(s, bass, beat, audio.bpm() > 0f ? audio.beatPhase() : -1f, dt);
         drawBackground(canvas, w, h, s, bass, beat);
         if (living != null) {
             if (Math.abs(living.coverage() - s.glowCoverage) > 0.001f) {
@@ -607,14 +607,14 @@ final class WallpaperRenderer {
     private boolean rigActive;
 
     /** Moves the rigged character (if the look has one) for this frame. */
-    private void updateRig(WallpaperSettings s, float bass, float beat, float dt) {
+    private void updateRig(WallpaperSettings s, float bass, float beat, float phase, float dt) {
         if (!s.rig.equals(rigText)) {
             rigText = s.rig;
             rig = CharacterRig.decode(s.rig);
         }
         rigActive = rig != null && s.rigAmount > 0f && subjectShown(s);
         if (rigActive) {
-            rig.animate(dt, bass, beat, s.rigAmount);
+            rig.animate(dt, bass, beat, phase, s.rigAmount);
             rig.prepare(image.getWidth(), image.getHeight());
         }
     }
@@ -657,6 +657,7 @@ final class WallpaperRenderer {
         }
         if (rigActive) {
             rig.draw(canvas, part.cutout, subjectMatrix, imagePaint);
+            rig.drawEyes(canvas, part.cutout, subjectMatrix, imagePaint);
         } else {
             canvas.drawBitmap(part.cutout, subjectMatrix, imagePaint);
         }
