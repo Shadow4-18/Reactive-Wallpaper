@@ -33,6 +33,8 @@ stop getting updates.
    - the gallery list URL (`Gallery.java`);
    - the look-link web address (`LookCode.java`), still accepting the old
      `shadow4-18.github.io/Reactive-Wallpaper/look/` links in the app;
+   - the feedback forms (`Feedback.java`, `ISSUES`) and the issue forms
+     (`.github/ISSUE_TEMPLATE/`), which move to the public repository;
    - "Share", "About" and anything else naming the old repository.
    Everyone who updates moves over automatically.
 3. **Publish releases from the private repository to the public one.**

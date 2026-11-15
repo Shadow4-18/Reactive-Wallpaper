@@ -1,0 +1,22 @@
+name: Suggest a feature or idea
+description: Something you'd like Resona to do, or do differently.
+title: "Idea: "
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What you'd like, and what you'd use it for.
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Anything that shows it (optional)
+      description: A picture, a link, another app that does something like it.
+  - type: input
+    id: version
+    attributes:
+      label: Resona version
+      description: Filled in for you when you open this from the app.

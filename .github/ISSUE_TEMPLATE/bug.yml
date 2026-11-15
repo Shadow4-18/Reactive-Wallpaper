@@ -1,0 +1,38 @@
+name: Report a problem
+description: Something in Resona isn't working right.
+title: "Problem: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again (if you know)
+      placeholder: "1. Open the editor\n2. ..."
+  - type: input
+    id: version
+    attributes:
+      label: Resona version
+      description: Filled in for you when you open this from the app.
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      description: Filled in for you when you open this from the app.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional)
+      description: >-
+        If you chose to include diagnostics in the app, it's been copied: long-press here and paste.
+        It holds your phone model, settings, recent crashes and Resona's log, never pictures or notifications.
+      render: text
+  - type: markdown
+    attributes:
+      value: Screenshots or a screen recording help a lot. Drag them into the first box.

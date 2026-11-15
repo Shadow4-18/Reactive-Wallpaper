@@ -776,6 +776,13 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         ui.toggle(about, "Check automatically when opening the app",
                 () -> Updater.autoCheckEnabled(this), v -> Updater.setAutoCheck(this, v));
+        Button feedback = new Button(this);
+        feedback.setText("Feedback & suggestions");
+        feedback.setOnClickListener(v -> Feedback.show(this));
+        about.addView(feedback, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ui.hint(about, "Report a problem or suggest an idea. It opens a short form on GitHub with your "
+                + "version and phone already filled in.");
         Button diagnostics = new Button(this);
         diagnostics.setText("Export diagnostics");
         diagnostics.setOnClickListener(v -> exportDiagnostics());
