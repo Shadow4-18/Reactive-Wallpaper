@@ -27,7 +27,8 @@ final class Feedback {
      * The Google Form for feedback without a GitHub account ("" hides the
      * option until the form exists).
      */
-    static final String FORM_URL = "";
+    static final String FORM_URL =
+            "https://docs.google.com/forms/d/e/1FAIpQLSfEMOJOKnLuU3wwjHRahaU7ZOZjduWKd_46Bm1N8B7kFT-w9w/viewform";
 
     private Feedback() {}
 
