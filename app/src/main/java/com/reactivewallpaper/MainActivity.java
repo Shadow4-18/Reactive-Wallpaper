@@ -418,9 +418,12 @@ public class MainActivity extends Activity {
 
         LinearLayout weatherSection = ui.section("Weather");
         ui.choiceColumn(weatherSection, new String[] {"Off", "Live: the weather outside", "Rain", "Snow", "Fog",
-                        "Thunderstorm (lightning on big beats)"},
+                        "Thunderstorm (lightning on big beats)", "Seasonal: changes with the date",
+                        "Cherry blossoms", "Autumn leaves", "Fireflies", "Winter lights and snow",
+                        "Halloween: embers and bats"},
                 new int[] {WallpaperSettings.WEATHER_OFF, WallpaperSettings.WEATHER_LIVE, Weather.RAIN, Weather.SNOW,
-                        Weather.FOG, Weather.STORM},
+                        Weather.FOG, Weather.STORM, WallpaperSettings.WEATHER_SEASON, SeasonLayer.PETALS,
+                        SeasonLayer.LEAVES, SeasonLayer.FIREFLIES, SeasonLayer.WINTER, SeasonLayer.HALLOWEEN},
                 s.weatherMode, v -> {
                     s.weatherMode = v;
                     if (v == WallpaperSettings.WEATHER_LIVE) {
@@ -430,6 +433,11 @@ public class MainActivity extends Activity {
                 });
         ui.slider(weatherSection, "Amount", 0f, 1f, () -> s.weatherAmount, v -> s.weatherAmount = v,
                 Controls::percent);
+        if (s.weatherMode == WallpaperSettings.WEATHER_SEASON) {
+            ui.hint(weatherSection, "Spring: cherry blossoms. Summer: fireflies. Autumn: falling leaves, and embers "
+                    + "and bats for Halloween (the last two weeks of October). Winter: fairy lights and snow. "
+                    + "Seasons flip south of the equator once your location is saved.");
+        }
         if (s.weatherMode == WallpaperSettings.WEATHER_LIVE) {
             long at = Weather.fetchedAt(this);
             String status = WallpaperSettings.sunLocation(this) == null
@@ -812,6 +820,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        SeasonLayer.southern = WallpaperSettings.southern(this);
         startLiveWeather(false);
         route.start();
         mainHandler.removeCallbacks(tempoTicker);

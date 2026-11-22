@@ -181,6 +181,8 @@ final class WallpaperSettings {
     // Weather over the wallpaper.
     static final int WEATHER_OFF = -1;
     static final int WEATHER_LIVE = -2;
+    /** A seasonal scene chosen by the date (see {@link SeasonLayer#forDate}). */
+    static final int WEATHER_SEASON = -3;
     /** WEATHER_OFF, WEATHER_LIVE (the weather outside), or a fixed {@link Weather} kind. */
     int weatherMode = WEATHER_OFF;
     /** How much of it, 0 .. 1. */
@@ -402,6 +404,12 @@ final class WallpaperSettings {
     }
 
     /** The saved approximate location for following the sun, or null. */
+    /** Whether the saved location is south of the equator (which flips the seasons). */
+    static boolean southern(Context context) {
+        double[] where = sunLocation(context);
+        return where != null && where[0] < 0;
+    }
+
     static double[] sunLocation(Context context) {
         SharedPreferences p = prefs(context);
         if (!p.contains(KEY_TOD_LAT)) {

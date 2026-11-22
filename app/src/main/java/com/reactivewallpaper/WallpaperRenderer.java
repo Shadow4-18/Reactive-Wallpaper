@@ -176,6 +176,10 @@ final class WallpaperRenderer {
             weather.release();
             weather = null;
         }
+        if (seasons != null) {
+            seasons.release();
+            seasons = null;
+        }
         if (moments != null) {
             moments.release();
             moments = null;
@@ -454,6 +458,7 @@ final class WallpaperRenderer {
     private boolean depthActive;
 
     private WeatherLayer weather;
+    private SeasonLayer seasons;
     private Weather.State liveWeather = new Weather.State(Weather.CLEAR, 0f, 0f);
 
     /** The weather outside, for looks that follow it. */
@@ -469,6 +474,17 @@ final class WallpaperRenderer {
         }
         boolean live = s.weatherMode == WallpaperSettings.WEATHER_LIVE;
         int kind = live ? liveWeather.kind : s.weatherMode;
+        if (s.weatherMode == WallpaperSettings.WEATHER_SEASON) {
+            kind = SeasonLayer.forDate(java.util.Calendar.getInstance(), SeasonLayer.southern);
+        }
+        if (SeasonLayer.isSeason(kind)) {
+            if (seasons == null) {
+                seasons = new SeasonLayer(density);
+            }
+            float amount = s.weatherAmount * 1.2f * (saving ? 0.5f : 1f);
+            seasons.draw(canvas, w, h, kind, Math.min(1f, amount), 0.15f, bass, beat, dt);
+            return;
+        }
         // A chosen kind uses a medium intensity; live weather its own.
         float intensity = live ? liveWeather.intensity : 0.6f;
         float wind = live ? liveWeather.wind : 0.15f;

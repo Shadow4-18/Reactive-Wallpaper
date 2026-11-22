@@ -102,6 +102,17 @@ public class RenderSnapshotTest {
         } finally {
             WeatherLayer.firstStrikeSeconds = 2f;
         }
+        int[] seasons = {SeasonLayer.PETALS, SeasonLayer.LEAVES, SeasonLayer.FIREFLIES, SeasonLayer.WINTER,
+                SeasonLayer.HALLOWEEN};
+        String[] names = {"85_season_petals", "86_season_leaves", "87_season_fireflies", "88_season_winter",
+                "89_season_halloween"};
+        for (int i = 0; i < seasons.length; i++) {
+            int kind = seasons[i];
+            snap(names[i], image, true, s -> {
+                s.weatherMode = kind;
+                s.weatherAmount = 1f;
+            });
+        }
         snap("84_weather_rain_hue_shifted", image, true, s -> {
             s.weatherMode = Weather.RAIN;
             s.weatherAmount = 1f;

@@ -469,6 +469,7 @@ public class ReactiveWallpaperService extends WallpaperService {
         }
 
         private void loadRotation() {
+            SeasonLayer.southern = WallpaperSettings.southern(context);
             timeOfDayIds = WallpaperSettings.timeOfDayIds(context);
             timeOfDayStarts = null;
             timeOfDayPart = currentPart();
