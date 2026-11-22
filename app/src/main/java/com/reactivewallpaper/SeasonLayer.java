@@ -87,7 +87,7 @@ final class SeasonLayer {
     private final float[] batY = new float[4];
     private final float[] batSpeed = new float[4];
     private final float[] batSize = new float[4];
-    private float nextBat = 2f;
+    private float nextBat = 0.4f;
 
     SeasonLayer(float density) {
         this.density = density;
@@ -163,14 +163,14 @@ final class SeasonLayer {
             } else if (x[i] > 1.1f) {
                 x[i] -= 1.2f;
             }
-            float r = (leaf ? 9f : 6f) * density * size[i];
+            float r = (leaf ? 13f : 10f) * density * (0.55f + 0.65f * size[i]);
             canvas.save();
             canvas.translate(x[i] * w, y[i] * h);
             canvas.rotate((float) Math.toDegrees(spin[i] * 0.6f));
             // Tumbling: the shape narrows as it turns edge-on.
             canvas.scale(0.25f + 0.75f * Math.abs((float) Math.cos(spin[i])), 1f);
             paint.setColor(color[i]);
-            paint.setAlpha((int) (150 + 100 * size[i]));
+            paint.setAlpha((int) (205 + 50 * size[i]));
             if (leaf) {
                 leafShape(r);
                 canvas.drawPath(shape, paint);
@@ -243,9 +243,11 @@ final class SeasonLayer {
             float py = (float) (0.55f + 0.38f * Math.sin(time * 0.04f * speed[i] + phase[i] * 2f)
                     + 0.03f * Math.cos(time * 0.9f + phase[i])) * h;
             float blink = (float) Math.max(0, Math.sin(time * (0.7f + 0.5f * speed[i]) + phase[i] * 5f));
-            float glowAmount = blink * blink * (0.7f + 0.5f * beat);
-            float r = (7f + 9f * size[i]) * density * (0.8f + 0.4f * glowAmount);
+            float glowAmount = Math.min(1f, 0.12f + blink * blink * (1.0f + 0.6f * beat));
+            float r = (11f + 13f * size[i]) * density * (0.8f + 0.4f * glowAmount);
             drawGlow(canvas, px, py, r, 0xFFEFFF8A, glowAmount);
+            // The bright little body inside the glow.
+            drawGlow(canvas, px, py, r * 0.3f, 0xFFFFFFE0, glowAmount);
         }
     }
 
@@ -253,8 +255,10 @@ final class SeasonLayer {
     private void drawLights(Canvas canvas, int w, int h, int count, float beat) {
         for (int i = 0; i < count; i++) {
             float twinkle = 0.55f + 0.45f * (float) Math.sin(time * (1.1f + speed[i]) + phase[i]);
-            float r = (6f + 14f * size[i]) * density;
-            drawGlow(canvas, x[i] * w, y[i] * h, r, color[i], twinkle * (0.55f + 0.6f * beat));
+            float r = (10f + 18f * size[i]) * density;
+            float lit = Math.min(1f, twinkle * (0.8f + 0.5f * beat));
+            drawGlow(canvas, x[i] * w, y[i] * h, r, color[i], lit);
+            drawGlow(canvas, x[i] * w, y[i] * h, r * 0.3f, 0xFFFFFFFF, lit * 0.9f);
         }
         // Snow: small soft flakes, drifting down.
         paint.setStyle(Paint.Style.FILL);
@@ -278,8 +282,10 @@ final class SeasonLayer {
             }
             float flicker = 0.6f + 0.4f * (float) Math.sin(time * 9f + phase[i] * 7f);
             float fade = Math.min(1f, y[i] * 1.6f);
-            float r = (2.5f + 5f * size[i]) * density;
-            drawGlow(canvas, x[i] * w, y[i] * h, r, i % 3 == 0 ? 0xFFFFC35A : 0xFFFF7A2E, flicker * fade);
+            float r = (5f + 8f * size[i]) * density;
+            float lit = Math.min(1f, 1.3f * flicker * fade);
+            drawGlow(canvas, x[i] * w, y[i] * h, r, i % 3 == 0 ? 0xFFFFC35A : 0xFFFF7A2E, lit);
+            drawGlow(canvas, x[i] * w, y[i] * h, r * 0.35f, 0xFFFFF0C0, lit);
         }
     }
 
@@ -291,7 +297,7 @@ final class SeasonLayer {
             float startY = 0.1f + random.nextFloat() * 0.35f;
             for (int b = 0, made = 0; b < batX.length && made < flock; b++) {
                 if (batX[b] < 0f) {
-                    batX[b] = -0.1f - made * 0.08f;
+                    batX[b] = -0.05f - made * 0.08f;
                     batY[b] = startY + made * 0.04f;
                     batSpeed[b] = 0.12f + random.nextFloat() * 0.08f;
                     batSize[b] = 0.7f + random.nextFloat() * 0.6f;
@@ -315,7 +321,7 @@ final class SeasonLayer {
             float bx = batX[b] * w;
             float by = (batY[b] + 0.03f * (float) Math.sin(time * 2.5f + b)) * h;
             float flap = (float) Math.sin(time * (12f + 10f * beat) + b * 1.7f);
-            float s = 11f * density * batSize[b];
+            float s = 16f * density * batSize[b];
             shape.reset();
             // Body, then each wing as a scalloped curve that rises and falls with the flap.
             shape.addOval(bx - s * 0.18f, by - s * 0.3f, bx + s * 0.18f, by + s * 0.3f, Path.Direction.CW);
