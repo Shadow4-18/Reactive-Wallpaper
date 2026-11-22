@@ -282,8 +282,8 @@ final class SeasonLayer {
             }
             float flicker = 0.6f + 0.4f * (float) Math.sin(time * 9f + phase[i] * 7f);
             float fade = Math.min(1f, y[i] * 1.6f);
-            float r = (5f + 8f * size[i]) * density;
-            float lit = Math.min(1f, 1.3f * flicker * fade);
+            float r = (7f + 10f * size[i]) * density;
+            float lit = Math.min(1f, 1.6f * flicker * fade);
             drawGlow(canvas, x[i] * w, y[i] * h, r, i % 3 == 0 ? 0xFFFFC35A : 0xFFFF7A2E, lit);
             drawGlow(canvas, x[i] * w, y[i] * h, r * 0.35f, 0xFFFFF0C0, lit);
         }
@@ -333,6 +333,15 @@ final class SeasonLayer {
                 shape.quadTo(bx + side * s * 0.55f, tipY + s * 0.2f, bx + side * s * 0.4f, by + s * 0.25f);
                 shape.close();
             }
+            // Dark wings on a dark sky: lit at the edges by the embers' glow, so they read.
+            drawGlow(canvas, bx, by, s * 2.2f, 0xFFFF8A3A, 0.35f);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+            paint.setStrokeWidth(2.2f * density);
+            paint.setColor(0xCCFF9A4A);
+            canvas.drawPath(shape, paint);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0xF0100812);
             canvas.drawPath(shape, paint);
         }
     }
