@@ -26,7 +26,9 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -274,6 +276,15 @@ public class MainActivity extends Activity {
             ui.hint(controls, "Showing the main settings. Choose Everything for camera moves, shader effects, "
                     + "touch, unlock and more.");
         }
+
+        Button quick = new Button(this);
+        quick.setText("✨ Quick start from a photo");
+        quick.setOnClickListener(v -> {
+            quickStart = true;
+            chooseImage();
+        });
+        controls.addView(quick, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         LinearLayout looks = ui.section("Looks");
         looksUi.build(ui, looks);
@@ -1374,6 +1385,9 @@ public class MainActivity extends Activity {
             loadPreviewImage();
             return;
         }
+        if (requestCode == REQUEST_IMAGE && (resultCode != RESULT_OK || data == null || data.getData() == null)) {
+            quickStart = false;
+        }
         if (requestCode != REQUEST_IMAGE || resultCode != RESULT_OK || data == null || data.getData() == null) {
             return;
         }
@@ -1406,6 +1420,159 @@ public class MainActivity extends Activity {
                 settings.rig = "";
                 saveDraft();
                 loadPreviewImage();
+                if (quickStart) {
+                    quickStart = false;
+                    if (mediaType == WallpaperSettings.MEDIA_IMAGE) {
+                        runQuickStart();
+                    } else {
+                        Toast.makeText(this, "Quick start sets up still pictures. Your video or GIF is in; "
+                                + "Subject can track it.", Toast.LENGTH_LONG).show();
+                    }
+                }
+            });
+        });
+    }
+
+    /** Set when the picture being chosen is for the quick-start wizard. */
+    private boolean quickStart;
+
+    /**
+     * The quick-start wizard, after a photo is chosen: finds the subject (drawn
+     * in front, with a soft light behind it), places a character skeleton with
+     * blinking eyes, puts the ring visualizer on a ring if the picture has one,
+     * and takes the colors from the picture. Undo puts the settings back.
+     */
+    private void runQuickStart() {
+        android.widget.ProgressBar spinner = new android.widget.ProgressBar(this);
+        TextView label = new TextView(this);
+        label.setText("Finding the subject…");
+        label.setTextColor(getColor(R.color.text_primary));
+        label.setPadding(dp(16), 0, 0, 0);
+        LinearLayout box = new LinearLayout(this);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setPadding(dp(24), dp(20), dp(24), dp(8));
+        box.addView(spinner);
+        box.addView(label);
+        android.app.AlertDialog progress = new android.app.AlertDialog.Builder(this)
+                .setTitle("Setting up your wallpaper")
+                .setView(box)
+                .setCancelable(false)
+                .show();
+        DisplayMetrics dm = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getRealMetrics(dm);
+        int screenW = dm.widthPixels;
+        int screenH = dm.heightPixels;
+        executor.execute(() -> {
+            Bitmap image = ImageStore.load(ImageStore.draftFile(this), 1024, 1024);
+            mainHandler.post(() -> {
+                if (isDestroyed()) {
+                    return;
+                }
+                if (image == null) {
+                    progress.dismiss();
+                    return;
+                }
+                SubjectDetector.detect(this, image, (mask, error) -> executor.execute(() -> {
+                    List<String> done = new ArrayList<>();
+                    // The subject, and a skeleton for it.
+                    String rig = "";
+                    boolean eyes = false;
+                    if (mask != null && ImageStore.saveMask(mask, ImageStore.draftSubjectFile(this))) {
+                        done.add("Found the subject: it's drawn in front, with a soft light behind it.");
+                        int mw = 96;
+                        int mh = Math.max(8, Math.round(mw * image.getHeight() / (float) image.getWidth()));
+                        float[] grid = new float[mw * mh];
+                        for (float[] g : SubjectLayer.readMasks(mask, mw, mh)) {
+                            for (int i = 0; i < grid.length; i++) {
+                                grid[i] = Math.max(grid[i], g[i]);
+                            }
+                        }
+                        CharacterRig skeleton = CharacterRig.guess(grid, mw, mh);
+                        if (skeleton != null) {
+                            skeleton.guessEyes(image.getWidth(), image.getHeight());
+                            int ew = Math.min(400, image.getWidth());
+                            int eh = Math.max(1, Math.round(ew * image.getHeight() / (float) image.getWidth()));
+                            Bitmap small = Bitmap.createScaledBitmap(image, ew, eh, true);
+                            int[] px = new int[ew * eh];
+                            small.getPixels(px, 0, ew, 0, 0, ew, eh);
+                            if (small != image) {
+                                small.recycle();
+                            }
+                            eyes = EyeFinder.find(px, ew, eh, skeleton);
+                            skeleton.blink = eyes;
+                            rig = skeleton.encode();
+                            done.add(eyes ? "Placed a character skeleton and found the eyes: it sways, bobs "
+                                    + "with the music and blinks."
+                                    : "Placed a character skeleton: it sways and bobs with the music.");
+                        }
+                        mask.recycle();
+                    } else if (mask != null) {
+                        mask.recycle();
+                    }
+                    // A ring for the visualizer, if the picture has one.
+                    float scale = Math.min(1f, 400f / Math.max(image.getWidth(), image.getHeight()));
+                    int bw = Math.max(1, Math.round(image.getWidth() * scale));
+                    int bh = Math.max(1, Math.round(image.getHeight() * scale));
+                    Bitmap small = Bitmap.createScaledBitmap(image, bw, bh, true);
+                    int[] px = new int[bw * bh];
+                    small.getPixels(px, 0, bw, 0, 0, bw, bh);
+                    if (small != image) {
+                        small.recycle();
+                    }
+                    RingFinder.Ring ring = RingFinder.find(px, bw, bh);
+                    image.recycle();
+                    String finalRig = rig;
+                    boolean subject = !rig.isEmpty() || ImageStore.draftSubjectFile(this).isFile();
+                    mainHandler.post(() -> {
+                        if (isDestroyed()) {
+                            return;
+                        }
+                        progress.dismiss();
+                        if (subject) {
+                            settings.subjectFront = true;
+                            settings.subjectAura = Math.max(settings.subjectAura, 0.5f);
+                            settings.rig = finalRig;
+                            settings.rigAmount = 0.5f;
+                        }
+                        if (ring != null) {
+                            RingFinder.place(ring, bw, bh, screenW, screenH, settings);
+                            settings.style = WallpaperSettings.STYLE_CIRCLE;
+                            done.add("Found a ring in the picture: the visualizer sits on it.");
+                        } else if (settings.style == WallpaperSettings.STYLE_NONE) {
+                            settings.style = WallpaperSettings.STYLE_BARS;
+                        }
+                        settings.colorMode = WallpaperSettings.COLOR_AUTO;
+                        settings.sparkleAmount = Math.max(settings.sparkleAmount, 0.35f);
+                        done.add("Took the colors from your picture, with sparkles on its glowing spots.");
+                        // Counts as a picture change, so the preview and wallpaper reload the subject.
+                        settings.imageVersion = System.currentTimeMillis();
+                        saveDraft();
+                        noteHistory();
+                        buildControls();
+                        loadPreviewImage();
+                        StringBuilder text = new StringBuilder();
+                        for (String line : done) {
+                            text.append("✓ ").append(line).append("\n\n");
+                        }
+                        if (!subject) {
+                            text.append("No clear subject was found, so there's no skeleton. You can mark one in "
+                                    + "Subject in front.\n\n");
+                        }
+                        text.append("Undo puts the settings back as they were.");
+                        android.app.AlertDialog.Builder summary = new android.app.AlertDialog.Builder(this)
+                                .setTitle("Your wallpaper is set up")
+                                .setMessage(text.toString())
+                                .setPositiveButton("Looks good", null);
+                        if (!finalRig.isEmpty()) {
+                            summary.setNeutralButton("Adjust the skeleton", (d, w) -> {
+                                Intent intent = new Intent(this, RigActivity.class);
+                                intent.putExtra(RigActivity.EXTRA_RIG, settings.rig);
+                                startActivityForResult(intent, REQUEST_RIG);
+                            });
+                        }
+                        summary.show();
+                    });
+                }));
             });
         });
     }
