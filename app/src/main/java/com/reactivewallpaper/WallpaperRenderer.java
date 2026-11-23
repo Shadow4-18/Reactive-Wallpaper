@@ -482,6 +482,13 @@ final class WallpaperRenderer {
                 seasons = new SeasonLayer(density);
             }
             float amount = s.weatherAmount * 1.2f * (saving ? 0.5f : 1f);
+            if (kind == SeasonLayer.WINTER) {
+                // The winter lights' snow is the Snow weather's own soft flakes, a little lighter.
+                if (weather == null) {
+                    weather = new WeatherLayer(density);
+                }
+                weather.draw(canvas, w, h, Weather.SNOW, Math.min(1f, amount * 0.6f), 0.15f, bass, beat, dt);
+            }
             seasons.draw(canvas, w, h, kind, Math.min(1f, amount), 0.15f, bass, beat, dt);
             return;
         }

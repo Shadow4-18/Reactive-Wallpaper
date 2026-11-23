@@ -251,7 +251,7 @@ final class SeasonLayer {
         }
     }
 
-    /** Fairy lights hang still and twinkle, brighter on the beat; a light snow falls past them. */
+    /** Fairy lights hang still and twinkle, brighter on the beat (the snow falling past them is the Snow weather's). */
     private void drawLights(Canvas canvas, int w, int h, int count, float beat) {
         for (int i = 0; i < count; i++) {
             float twinkle = 0.55f + 0.45f * (float) Math.sin(time * (1.1f + speed[i]) + phase[i]);
@@ -259,16 +259,6 @@ final class SeasonLayer {
             float lit = Math.min(1f, twinkle * (0.8f + 0.5f * beat));
             drawGlow(canvas, x[i] * w, y[i] * h, r, color[i], lit);
             drawGlow(canvas, x[i] * w, y[i] * h, r * 0.3f, 0xFFFFFFFF, lit * 0.9f);
-        }
-        // Snow: small soft flakes, drifting down.
-        paint.setStyle(Paint.Style.FILL);
-        paint.setShader(null);
-        for (int i = count; i < Math.min(MAX, count * 2); i++) {
-            float fy = (float) ((time * 0.04f * speed[i] + phase[i]) % 1.1f) - 0.05f;
-            float fx = x[i] + 0.02f * (float) Math.sin(time * 0.8f + phase[i]);
-            paint.setColor(Color.WHITE);
-            paint.setAlpha((int) (120 + 100 * size[i]));
-            canvas.drawCircle(fx * w, fy * h, (1.2f + 2.2f * size[i]) * density, paint);
         }
     }
 
@@ -306,9 +296,6 @@ final class SeasonLayer {
             }
             nextBat = 4f + random.nextFloat() * 7f;
         }
-        paint.setStyle(Paint.Style.FILL);
-        paint.setShader(null);
-        paint.setColor(0xEE120A18);
         for (int b = 0; b < batX.length; b++) {
             if (batX[b] < -0.5f) {
                 continue;
@@ -318,32 +305,79 @@ final class SeasonLayer {
                 batX[b] = -1f;
                 continue;
             }
-            float bx = batX[b] * w;
-            float by = (batY[b] + 0.03f * (float) Math.sin(time * 2.5f + b)) * h;
-            float flap = (float) Math.sin(time * (12f + 10f * beat) + b * 1.7f);
+            // A quick downstroke and a slower upstroke; the body rises a little on each beat of the wings.
+            float cycle = (float) ((time * (2.2f + 1.6f * beat) + b * 0.37f) % 1.0);
+            float flap = cycle < 0.4f
+                    ? 1f - 2f * smooth(cycle / 0.4f)
+                    : -1f + 2f * smooth((cycle - 0.4f) / 0.6f);
             float s = 16f * density * batSize[b];
-            shape.reset();
-            // Body, then each wing as a scalloped curve that rises and falls with the flap.
-            shape.addOval(bx - s * 0.18f, by - s * 0.3f, bx + s * 0.18f, by + s * 0.3f, Path.Direction.CW);
-            for (int side = -1; side <= 1; side += 2) {
-                float tipY = by - s * 0.6f * flap;
-                shape.moveTo(bx, by - s * 0.1f);
-                shape.quadTo(bx + side * s * 0.6f, tipY - s * 0.4f, bx + side * s * 1.3f, tipY);
-                shape.quadTo(bx + side * s * 0.95f, tipY + s * 0.15f, bx + side * s * 0.8f, tipY + s * 0.4f);
-                shape.quadTo(bx + side * s * 0.55f, tipY + s * 0.2f, bx + side * s * 0.4f, by + s * 0.25f);
-                shape.close();
-            }
-            // Dark wings on a dark sky: lit at the edges by the embers' glow, so they read.
-            drawGlow(canvas, bx, by, s * 2.2f, 0xFFFF8A3A, 0.35f);
+            float bx = batX[b] * w;
+            float by = (batY[b] + 0.03f * (float) Math.sin(time * 2.5f + b)) * h + flap * s * 0.12f;
+            Path bat = batShape(s, flap);
+            canvas.save();
+            canvas.translate(bx, by);
+            // Lit warm from below by the embers, so a dark bat reads on a dark sky.
+            drawGlow(canvas, 0, 0, s * 2.4f, 0xFFFF8A3A, 0.3f);
             paint.setStyle(Paint.Style.STROKE);
             paint.setStrokeJoin(Paint.Join.ROUND);
-            paint.setStrokeWidth(2.2f * density);
-            paint.setColor(0xCCFF9A4A);
-            canvas.drawPath(shape, paint);
+            paint.setStrokeWidth(2f * density);
+            paint.setColor(0xB3FF9A4A);
+            canvas.drawPath(bat, paint);
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(0xF0100812);
-            canvas.drawPath(shape, paint);
+            paint.setColor(0xF2100812);
+            canvas.drawPath(bat, paint);
+            canvas.restore();
         }
+    }
+
+    private static float smooth(float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return t * t * (3f - 2f * t);
+    }
+
+    private final Path wing = new Path();
+    private final Path batPath = new Path();
+    private final android.graphics.Matrix mirror = new android.graphics.Matrix();
+
+    /**
+     * One bat as a single outline (body, head with ears, and both wings merged),
+     * so its rim light runs only around the outside. {@code flap} is -1 (wings
+     * down) .. 1 (up); the wings look narrower at either end of the stroke.
+     */
+    private Path batShape(float s, float flap) {
+        batPath.reset();
+        // Body and head with two pointed ears.
+        batPath.addOval(-0.17f * s, -0.28f * s, 0.17f * s, 0.38f * s, Path.Direction.CW);
+        batPath.addCircle(0, -0.36f * s, 0.15f * s, Path.Direction.CW);
+        Path ears = new Path();
+        ears.moveTo(-0.13f * s, -0.4f * s);
+        ears.lineTo(-0.1f * s, -0.62f * s);
+        ears.lineTo(-0.02f * s, -0.45f * s);
+        ears.close();
+        ears.moveTo(0.13f * s, -0.4f * s);
+        ears.lineTo(0.1f * s, -0.62f * s);
+        ears.lineTo(0.02f * s, -0.45f * s);
+        ears.close();
+        batPath.op(ears, Path.Op.UNION);
+        // The right wing: leading edge out to the wrist and tip, then a scalloped trailing edge back.
+        float span = 1f - 0.22f * Math.abs(flap);
+        float wristY = -0.18f * s - 0.5f * s * flap;
+        float tipY = -0.1f * s - 0.85f * s * flap;
+        wing.reset();
+        wing.moveTo(0.08f * s, -0.18f * s);
+        wing.quadTo(0.4f * s * span, wristY - 0.12f * s, 0.72f * s * span, wristY);
+        wing.lineTo(1.38f * s * span, tipY);
+        wing.quadTo(1.12f * s * span, tipY + 0.12f * s, 1.02f * s * span, tipY + 0.38f * s);
+        wing.quadTo(0.86f * s * span, wristY + 0.22f * s, 0.7f * s * span, wristY + 0.5f * s);
+        wing.quadTo(0.48f * s * span, 0.08f * s, 0.34f * s * span, 0.28f * s);
+        wing.quadTo(0.2f * s, 0.14f * s, 0.08f * s, 0.22f * s);
+        wing.close();
+        batPath.op(wing, Path.Op.UNION);
+        // The left wing is its mirror.
+        mirror.setScale(-1f, 1f);
+        wing.transform(mirror);
+        batPath.op(wing, Path.Op.UNION);
+        return batPath;
     }
 
     void release() {
